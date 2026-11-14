@@ -1,0 +1,11 @@
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/holidays.json
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/manifest.json
+  Cache-Control: no-cache
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; frame-src 'self'; style-src 'self' 'unsafe-inline';

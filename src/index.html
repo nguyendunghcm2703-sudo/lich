@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Lịch Việt</title>
+  <meta name="description" content="Lịch âm dương Việt Nam, ngày lễ tết và ngày đặc biệt của bạn">
+  <meta name="theme-color" content="#a61e22" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16110e" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="appbar">
+    <h1 id="title">Hôm nay</h1>
+    <button class="gear" id="settingsBtn" type="button" aria-label="Cài đặt">⚙️</button>
+  </header>
+
+  <main id="view" tabindex="-1" aria-live="polite"></main>
+
+  <nav class="tabs" id="tabs" aria-label="Điều hướng">
+    <button data-tab="today"><span class="ti">🏠</span><span>Hôm nay</span></button>
+    <button data-tab="cal"><span class="ti">📅</span><span>Lịch</span></button>
+    <button data-tab="special"><span class="ti">⭐</span><span>Của tôi</span></button>
+  </nav>
+
+  <dialog id="dlg"></dialog>
+  <input type="file" id="importFile" accept="application/json,.json" hidden>
+  <div id="toast" role="status"></div>
+
+  <script src="lunar.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
