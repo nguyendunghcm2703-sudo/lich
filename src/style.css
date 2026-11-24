@@ -362,3 +362,11 @@ body.on-tree { overflow: hidden; }
 .tb-btns button:disabled { opacity: .4; }
 
 .ghost { background: none; border: 0; color: var(--muted); opacity: .6; font-size: .78rem; text-align: left; padding: 4px 0; }
+
+/* ---- Bánh kem: dùng biểu tượng 🎂 của điện thoại ---- */
+u.emo { text-decoration: none; font-style: normal; line-height: 1; display: inline-block; font-size: 1em; }
+.ico u.emo { font-size: 24px; }
+.chip u.emo { font-size: 14px; }
+.fchip .fi u.emo { font-size: 15px; }
+.dots u.emo { font-size: 11px; }
+.types u.emo { font-size: 28px; }

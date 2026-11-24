@@ -11,7 +11,7 @@
   var DOW_S = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
   var ICON = {
     flag: '<svg viewBox="0 0 24 16" aria-hidden="true"><rect width="24" height="16" rx="2.5" fill="#DA251D"/><polygon points="12,2.6 13.6,7.3 18.5,7.3 14.5,10.2 16,14.9 12,12 8,14.9 9.5,10.2 5.5,7.3 10.4,7.3" fill="#FFDE00"/></svg>',
-    cake: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="12" width="17" height="8.5" rx="2.2" fill="#E8528C"/><path d="M3.5 15c2 2.2 4.2 2.2 6.2 0s4.2-2.2 6.2 0 3 1.6 4.6 0" fill="none" stroke="#fff" stroke-width="1.5"/><rect x="11.1" y="7.2" width="1.8" height="4.8" rx=".9" fill="#F5B02E"/><path d="M12 2.6c1.3 1.3 1.5 2.6 0 3.8-1.5-1.2-1.3-2.5 0-3.8z" fill="#FF8A3D"/></svg>',
+    cake: '<u class="emo">🎂</u>',
     lotus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c3 2.6 3.4 6.4 0 10.5-3.4-4.1-3-7.9 0-10.5z" fill="#F4A3BF"/><path d="M3.5 9.5c3.6-.2 6.6 1.7 8.5 6.2-4.2.8-7.8-1.2-8.5-6.2z" fill="#EE7FA4"/><path d="M20.5 9.5c-3.6-.2-6.6 1.7-8.5 6.2 4.2.8 7.8-1.2 8.5-6.2z" fill="#EE7FA4"/><path d="M4 17.5c4.5 3.2 11.5 3.2 16 0-4.5-1.2-11.5-1.2-16 0z" fill="#5FA971"/></svg>',
     star: '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="12,3 14.6,9 21,9.6 16.2,13.9 17.7,20.3 12,17 6.3,20.3 7.8,13.9 3,9.6 9.4,9" fill="#3B82C4"/></svg>',
     dot: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5.5" fill="#E0B04A"/></svg>'
