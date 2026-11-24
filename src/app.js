@@ -57,9 +57,9 @@
     installEvt: null
   };
   if (!Array.isArray(state.special)) state.special = [];
-  state.special.forEach(function (s) { if (!GROUPS[s.group]) s.group = 'other'; }); // gộp "Kỷ niệm" cũ vào "Khác"
+  state.special.forEach(function (s) { if (!GROUPS[s.group]) s.group = 'other'; if (s.link && s.shift == null) s.shift = -1; }); // gộp "Kỷ niệm" cũ vào "Khác"
   if (!state.tree || !Array.isArray(state.tree.people) || !Array.isArray(state.tree.roots)) state.tree = { roots: [], people: [] };
-  state.tsel = null; state.troot = state.tree.roots.length ? state.tree.roots[0].id : null;
+  state.tsel = null; state.edit = false; state.troot = state.tree.roots.length ? state.tree.roots[0].id : null;
   state.view = { y: state.today.y, m: state.today.m };
   state.sel = { y: state.today.y, m: state.today.m, d: state.today.d };
 
@@ -103,6 +103,7 @@
         if (!s.repeat && s.y !== ly) return;
         if (s.repeat && s.y && ly < s.y) return;
         var r = resolveLunar(s.d, s.m, ly, s.leap);
+        if (r && s.shift) r = L.addDays(r, s.shift);
         if (r && r.y === Y) out.push({ y: r.y, m: r.m, d: r.d, n: s.y ? ly - s.y : null });
       });
     }
@@ -400,6 +401,7 @@
     else html = '<ul class="rows cards">' + items.map(function (it) {
       var s = it.s, g = grp(s.group), o = it.occ;
       var cal = s.cal === 'lunar' ? 'Âm lịch ' + s.d + '/' + s.m + (s.leap ? ' nhuận' : '') : 'Dương lịch ' + s.d + '/' + s.m;
+      if (s.shift && s.cal === 'lunar') cal = 'Mất ' + s.d + '/' + s.m + ' âm · giỗ trước 1 ngày';
       var meta = [cal + (s.repeat ? ' · mỗi năm' : ' · ' + s.y)];
       if (s.link) meta.push('từ Gia phả');
       var extra = '';
@@ -526,7 +528,7 @@
     var i = state.special.map(function (s) { return s.id; }).indexOf(item.id);
     var old = i >= 0 ? state.special[i] : null;
     if (old && old.link) { // sửa tay ngày tháng thì tách khỏi Gia phả
-      if (old.cal === item.cal && old.d === item.d && old.m === item.m && old.y === item.y && !!old.leap === item.leap) item.link = old.link;
+      if (old.cal === item.cal && old.d === item.d && old.m === item.m && old.y === item.y && !!old.leap === item.leap) { item.link = old.link; item.shift = old.shift; }
       else unlinkPerson(old.link);
     }
     if (i >= 0) state.special[i] = item; else state.special.push(item);
@@ -589,11 +591,20 @@
       '<label class="set-line sw"><span>Hiện Gia phả</span><input type="checkbox" data-set="tree"' + (state.set.tree ? ' checked' : '') + '></label>' +
       '<label class="set-line sw"><span>Hiện ngày lễ Mỹ (được nghỉ)</span><input type="checkbox" data-set="us"' + (state.set.us ? ' checked' : '') + '></label>' +
       '<p class="note">Tắt Gia phả chỉ ẩn đi, dữ liệu vẫn được giữ lại.</p></section>' + html;
-    if (state.set.tree) html += '<section class="card"><h2>Gia phả</h2>' +
-      '<div class="set-line"><span>Đang lưu</span><span>' + state.tree.people.length + ' người · ' + state.tree.roots.length + ' nhánh</span></div>' +
-      '<div class="btns"><button class="btn primary" data-act="gpExport">Xuất gia phả (có mật khẩu)</button><button class="btn" data-act="gpUpdate">Cập nhật từ web</button></div>' +
-      '<div class="btns"><button class="btn danger" data-act="gpWipe">Xoá toàn bộ gia phả</button></div>' +
-      '<p class="note">Xuất ra file mã hoá <b>giapha.enc.json</b>, đưa lên cùng thư mục app trên GitHub để cả nhà có mật khẩu mới xem được. “Cập nhật từ web” thay gia phả trên máy bằng bản đó.</p></section>';
+    if (state.set.tree) {
+      var ed = canEdit(), lk = !!state.tree.lock;
+      html += '<section class="card"><h2>Gia phả</h2>' +
+        '<div class="set-line"><span>Đang lưu</span><span>' + state.tree.people.length + ' người · ' + state.tree.roots.length + ' nhánh</span></div>' +
+        '<div class="set-line"><span>Chế độ</span><span>' + (!lk ? 'Chưa đặt mật khẩu sửa' : (state.edit ? 'Đang sửa' : 'Chỉ xem')) + '</span></div>' +
+        '<div class="btns">' +
+        (lk && !state.edit ? '<button class="btn primary" data-act="gpEditOn">Bật chế độ sửa</button>' : '') +
+        (lk && state.edit ? '<button class="btn primary" data-act="gpEditOff">Tắt chế độ sửa</button>' : '') +
+        (ed ? '<button class="btn" data-act="gpSetLock">' + (lk ? 'Đổi mật khẩu sửa' : 'Đặt mật khẩu sửa') + '</button>' : '') +
+        '</div><div class="btns">' + (ed ? '<button class="btn primary" data-act="gpExport">Xuất gia phả (có mật khẩu)</button>' : '') +
+        '<button class="btn" data-act="gpUpdate">Cập nhật từ web</button></div>' +
+        (ed ? '<div class="btns"><button class="btn danger" data-act="gpWipe">Xoá toàn bộ gia phả</button></div>' : '') +
+        '<p class="note">Gia phả mặc định chỉ để xem. Sửa, xuất file và xoá cần bật chế độ sửa (mật khẩu sửa). Xuất ra file mã hoá <b>giapha.enc.json</b> rồi đưa lên GitHub để cả nhà xem; “Cập nhật từ web” thay gia phả trên máy bằng bản đó.</p></section>';
+    }
     html += '<section class="card"><h2>Sao lưu dữ liệu</h2>' +
       '<div class="set-line"><span>Sự kiện</span><span>' + state.special.length + '</span></div>' +
       '<div class="set-line"><span>Gia phả</span><span>' + state.tree.people.length + ' người</span></div>' +
@@ -655,7 +666,8 @@
       name: x.name.trim().slice(0, 60), group: GROUPS[x.group] ? x.group : 'other', cal: cal, d: d, m: m, y: y,
       leap: cal === 'lunar' && !!x.leap, repeat: repeat, remind: [0, 1, 3, 7].indexOf(Number(x.remind)) >= 0 ? Number(x.remind) : 0,
       note: typeof x.note === 'string' ? x.note.slice(0, 200) : '',
-      link: typeof x.link === 'string' ? x.link : undefined
+      link: typeof x.link === 'string' ? x.link : undefined,
+      shift: typeof x.link === 'string' ? (parseInt(x.shift, 10) || (x.shift == null ? -1 : 0)) : undefined
     };
   }
   function importData(file) {
@@ -678,7 +690,7 @@
           var pm = {}, rm = {};
           state.tree.people.forEach(function (x) { pm[x.id] = x; }); tr.people.forEach(function (x) { pm[x.id] = x; });
           state.tree.roots.forEach(function (x) { rm[x.id] = x; }); tr.roots.forEach(function (x) { rm[x.id] = x; });
-          state.tree = { roots: Object.keys(rm).map(function (k) { return rm[k]; }), people: Object.keys(pm).map(function (k) { return pm[k]; }) };
+          state.tree = { roots: Object.keys(rm).map(function (k) { return rm[k]; }), people: Object.keys(pm).map(function (k) { return pm[k]; }), lock: state.tree.lock || tr.lock };
           if (!rm[state.troot]) state.troot = state.tree.roots.length ? state.tree.roots[0].id : null;
           persistTree();
         }
@@ -694,6 +706,13 @@
   var tv = { x: 0, y: 0, k: 1 }, tvFit = true, tsize = null;
   var pctx = null, dctx = null, rctx = null, pDeadFlag = false;
 
+  function canEdit() { return !state.tree.lock || !!state.edit; }
+  function viewOnly() { if (canEdit()) return false; toast('Đang ở chế độ xem. Bật chế độ sửa trong Cài đặt.'); return true; }
+  function lockHash(pw, salt, iter) {
+    return crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']).then(function (k) {
+      return crypto.subtle.deriveBits({ name: 'PBKDF2', salt: salt, iterations: iter, hash: 'SHA-256' }, k, 256);
+    }).then(function (b) { return b64(b); });
+  }
   function persistTree() { if (!LS.set(KEY_TREE, state.tree)) toast('Không lưu được dữ liệu trên trình duyệt này'); }
   function personById(id) { var a = state.tree.people; for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null; }
   function rootById(id) { return state.tree.roots.filter(function (r) { return r.id === id; })[0] || null; }
@@ -729,10 +748,17 @@
     var l = L.solarToLunar(dd.d, dd.m, Y);
     return { d: l.d, m: l.m, y: dd.y ? l.y : null, leap: l.leap };
   }
+  function deathGio(p) { // ngày giỗ (âm lịch) gần nhất = trước ngày mất 1 ngày
+    var dl = deathLunar(p); if (!dl) return null;
+    var o = nextOcc({ cal: 'lunar', d: dl.d, m: dl.m, y: dl.y, leap: dl.leap, repeat: true, shift: -1 }, state.today);
+    if (!o) return null;
+    var l = L.solarToLunar(o.date.d, o.date.m, o.date.y);
+    return { d: l.d, m: l.m, leap: l.leap, date: o.date };
+  }
   function syncDeathEvent(p) {
     var dl = deathLunar(p); if (!dl) return;
     var old = linkedEvent(p);
-    var ev = { id: old ? old.id : uid(), name: 'Giỗ ' + p.name, group: 'memorial', cal: 'lunar', d: dl.d, m: dl.m, y: dl.y, leap: dl.leap, repeat: true, remind: old ? old.remind : 0, note: old ? old.note : '', link: p.id };
+    var ev = { id: old ? old.id : uid(), name: 'Giỗ ' + p.name, group: 'memorial', cal: 'lunar', d: dl.d, m: dl.m, y: dl.y, leap: dl.leap, repeat: true, remind: old ? old.remind : 0, note: old ? old.note : '', link: p.id, shift: -1 };
     if (old) state.special[state.special.indexOf(old)] = ev; else state.special.push(ev);
     p.evId = ev.id;
     persistSpecial();
@@ -760,7 +786,8 @@
       if (!r || typeof r.id !== 'string' || typeof r.personId !== 'string') return null;
       return { id: r.id, name: str(r.name, 30) || 'Nhánh', clan: str(r.clan, 30), branch: str(r.branch, 30), gen: int(r.gen, 1, 99) || 1, personId: r.personId };
     }).filter(Boolean);
-    return { roots: roots, people: people };
+    var lk = t.lock, lock = lk && typeof lk.salt === 'string' && typeof lk.hash === 'string' && lk.salt.length < 100 && lk.hash.length < 100 ? { salt: lk.salt, hash: lk.hash, iter: Math.min(Math.max(parseInt(lk.iter, 10) || 150000, 50000), 1000000) } : undefined;
+    return { roots: roots, people: people, lock: lock };
   }
 
   /* --- bố cục cây: mỗi cặp vợ chồng là một khung (chồng trên, vợ dưới) --- */
@@ -829,7 +856,8 @@
     if (p.dead && p.death) {
       var dd = p.death, dl = deathLunar(p);
       a.push('mất ' + (dd.cal === 'lunar' ? dd.d + '/' + dd.m + ' âm' + (dd.y ? ' ' + dd.y : '') : dd.d + '/' + dd.m + (dd.y ? '/' + dd.y : '')));
-      if (dl) a.push('giỗ ' + dl.d + '/' + dl.m + ' âm lịch');
+      var g = deathGio(p);
+      if (g) a.push('giỗ ' + g.d + '/' + g.m + ' âm lịch');
     } else if (p.dead) a.push('đã mất');
     return a.join(' · ');
   }
@@ -840,7 +868,7 @@
     var top = ($('.appbar') || { offsetHeight: 56 }).offsetHeight;
     var html = '<div class="tree-screen" style="top:' + top + 'px">';
     if (!cur || !personById(cur.personId)) {
-      html += '<div class="tree-empty"><section class="card"><h2>Gia phả</h2><p class="note" style="margin:0 0 12px">Chưa có gia phả. Bắt đầu từ người đời đầu tiên mà bạn muốn ghi, rồi thêm vợ/chồng và con cháu.</p><button class="btn primary block" data-act="tAddRoot">＋ Thêm gốc</button></section></div></div>';
+      html += '<div class="tree-empty"><section class="card"><h2>Gia phả</h2>' + (canEdit() ? '<p class="note" style="margin:0 0 12px">Chưa có gia phả. Bắt đầu từ người đời đầu tiên mà bạn muốn ghi, rồi thêm vợ/chồng và con cháu.</p><button class="btn primary block" data-act="tAddRoot">＋ Thêm gốc</button>' : '<p class="note" style="margin:0">Chưa có gia phả. Bật chế độ sửa trong Cài đặt để tạo, hoặc bấm “Cập nhật từ web” để lấy gia phả của gia đình.</p>') + '</section></div></div>';
       $('#view').innerHTML = html; tsize = null; return;
     }
     state.troot = cur.id;
@@ -851,8 +879,8 @@
 
     html += '<div class="tree-top">' + T.roots.map(function (r) {
       return '<button class="fchip" data-act="tBranch" data-id="' + esc(r.id) + '" aria-pressed="' + (r.id === cur.id) + '">' + esc(r.name) + '</button>';
-    }).join('') + '<button class="fchip add" data-act="tAddRoot">＋ Thêm gốc</button></div>';
-    html += '<div class="tree-desc"><span>' + esc(sel ? descOf(cur, genOf(sel)) : descOf(cur, cur.gen) + ' (người gốc)') + '</span><button class="linkbtn" data-act="tEditRoot">Sửa nhánh</button></div>';
+    }).join('') + (canEdit() ? '<button class="fchip add" data-act="tAddRoot">＋ Thêm gốc</button>' : '') + '</div>';
+    html += '<div class="tree-desc"><span>' + esc(sel ? descOf(cur, genOf(sel)) : descOf(cur, cur.gen) + ' (người gốc)') + '</span>' + (canEdit() ? '<button class="linkbtn" data-act="tEditRoot">Sửa nhánh</button>' : '') + '</div>';
 
     html += '<div class="tree-stage"><div class="tree-vp" id="tvp"><div class="tree-world" id="tworld" style="width:' + lay.w + 'px;height:' + lay.h + 'px">' +
       '<svg width="' + lay.w + '" height="' + lay.h + '" aria-hidden="true">' + lay.lines.map(function (l) {
@@ -871,8 +899,8 @@
       html += '<div class="tree-bar"><div class="tb-name">' + esc(sel.name) + (sel.dead ? '<span class="pl">' + ICON.lotus + '</span>' : '') + '</div>' +
         '<div class="tb-sub">' + esc(personInfo(sel) || '—') + '</div>' +
         '<div class="tb-sub">' + esc(g ? descOf(cur, g) : '') + '</div>' +
-        '<div class="tb-btns"><button data-act="tEdit">Sửa</button><button data-act="tDeath">Ngày giỗ</button>' +
-        '<button data-act="tSpouse"' + (sel.spouse ? ' disabled' : '') + '>＋ Vợ/chồng</button><button data-act="tChild">＋ Con</button></div></div>';
+        (canEdit() ? '<div class="tb-btns"><button data-act="tEdit">Sửa</button><button data-act="tDeath">Ngày mất</button>' +
+        '<button data-act="tSpouse"' + (sel.spouse ? ' disabled' : '') + '>＋ Vợ/chồng</button><button data-act="tChild">＋ Con</button></div>' : '') + '</div>';
     }
     html += '</div>';
     $('#view').innerHTML = html;
@@ -952,6 +980,7 @@
       '<label><input type="radio" name="sex" value="f"' + (v === 'f' ? ' checked' : '') + '><span>Nữ</span></label></div>';
   }
   function openRootForm(id) {
+    if (viewOnly()) return;
     var r = id ? rootById(id) : null; if (id && !r) return;
     rctx = r ? r.id : null;
     var v = r || { name: state.tree.roots.length ? 'Nhánh ' + (state.tree.roots.length + 1) : 'Nhánh nội', clan: '', branch: '', gen: 1 };
@@ -1007,6 +1036,7 @@
 
   /* --- form: người --- */
   function openPersonForm(id, ctx) {
+    if (viewOnly()) return;
     var p = id ? personById(id) : null; if (id && !p) return;
     pctx = { id: id || null, kind: ctx && ctx.kind, of: ctx && ctx.of };
     var base = p || { name: '', sex: 'm', note: '', bd: '', bm: '', by: '' };
@@ -1020,7 +1050,7 @@
       '<label>Tháng<input type="number" name="bm" inputmode="numeric" min="1" max="12" value="' + esc(base.bm || '') + '"></label>' +
       '<label>Năm<input type="number" name="by" inputmode="numeric" min="1000" max="2199" value="' + esc(base.by || '') + '"></label></div>' +
       '<p class="err" id="formErr"></p>' +
-      '<button type="button" class="ghost" id="pDead">Người đã mất? Nhập ngày giỗ</button><div class="actions">' + (p ? '<button type="button" class="btn danger" id="pDel">Xoá</button><span class="grow"></span>' : '') +
+      '<button type="button" class="ghost" id="pDead">Người đã mất? Nhập ngày mất</button><div class="actions">' + (p ? '<button type="button" class="btn danger" id="pDel">Xoá</button><span class="grow"></span>' : '') +
       '<button type="button" class="btn" id="cancelBtn">Huỷ</button><button type="submit" class="btn primary">Lưu</button></div></form>';
     if (!dlg.open) dlg.showModal();
   }
@@ -1063,18 +1093,19 @@
 
   /* --- form: ngày giỗ / ngày mất --- */
   function openDeathForm(id) {
+    if (viewOnly()) return;
     var p = personById(id); if (!p) return;
     dctx = p.id;
     var dd = p.dead && p.death ? p.death : { cal: 'lunar', d: '', m: '', y: '', leap: false };
     if (dd.cal === 'solar') { var dl0 = deathLunar(p); if (dl0) dd = { cal: 'lunar', d: dl0.d, m: dl0.m, y: dl0.y, leap: dl0.leap }; }
-    dlg.innerHTML = '<form class="form" id="dForm" novalidate autocomplete="off"><h2>Ngày giỗ · ' + esc(p.name) + '</h2>' +
-      '<p class="note" style="margin:0">Ngày giỗ luôn tính theo <b>âm lịch</b>.</p><input type="hidden" name="dcal" value="lunar">' +
+    dlg.innerHTML = '<form class="form" id="dForm" novalidate autocomplete="off"><h2>Ngày mất · ' + esc(p.name) + '</h2>' +
+      '<p class="note" style="margin:0">Nhập ngày mất theo <b>âm lịch</b>. Ngày giỗ tự tính: luôn là ngày liền trước ngày mất.</p><input type="hidden" name="dcal" value="lunar">' +
       '<div class="row3"><label>Ngày mất (âm)<input type="number" name="d" inputmode="numeric" min="1" max="31" value="' + esc(dd.d || '') + '"></label>' +
       '<label>Tháng<input type="number" name="m" inputmode="numeric" min="1" max="12" value="' + esc(dd.m || '') + '"></label>' +
       '<label>Năm mất (âm)<input type="number" name="y" inputmode="numeric" min="1000" max="2199" placeholder="VD: 2022" value="' + esc(dd.y || '') + '"></label></div>' +
       '<label class="chk" id="dLeap"><input type="checkbox" name="leap"' + (dd.leap ? ' checked' : '') + '> Tháng nhuận</label>' +
       '<p class="preview" id="dprev"></p>' +
-      '<label class="chk sw"><span>Thêm vào Sự kiện (Giỗ hằng năm)</span><input type="checkbox" name="ev"' + (linkedEvent(p) ? ' checked' : '') + '></label>' +
+      '<label class="chk sw"><span>Thêm ngày giỗ vào Sự kiện (hằng năm)</span><input type="checkbox" name="ev"' + (linkedEvent(p) ? ' checked' : '') + '></label>' +
       '<p class="note" style="margin:0">Tắt: chỉ hiện ngày này trong cây gia phả, không nhắc trong lịch.</p>' +
       '<p class="err" id="formErr"></p><div class="actions">' + (p.dead ? '<button type="button" class="btn danger" id="dClear">Xoá ngày mất</button><span class="grow"></span>' : '') +
       '<button type="button" class="btn" id="cancelBtn">Huỷ</button><button type="submit" class="btn primary">Lưu</button></div></form>';
@@ -1109,7 +1140,9 @@
       pv.textContent = 'Ngày giỗ hằng năm: ' + l.d + '/' + l.m + (l.leap ? ' nhuận' : '') + ' âm lịch' + (v.y ? '' : ' (tính theo năm ' + Y + ')');
     } else {
       var r = resolveLunar(v.d, v.m, Y, v.leap);
-      pv.textContent = r ? 'Tương đương ' + pad(r.d) + '/' + pad(r.m) + '/' + r.y + ' dương lịch' + (v.y ? '' : ' (năm ' + Y + ')') : 'Không tìm được ngày tương ứng.';
+      if (!r) { pv.textContent = 'Không tìm được ngày tương ứng.'; return; }
+      var gr = L.addDays(r, -1), gl = L.solarToLunar(gr.d, gr.m, gr.y);
+      pv.textContent = 'Ngày mất tương đương ' + pad(r.d) + '/' + pad(r.m) + '/' + r.y + ' dương. Ngày giỗ: ' + gl.d + '/' + gl.m + (gl.leap ? ' nhuận' : '') + ' âm (' + pad(gr.d) + '/' + pad(gr.m) + '/' + gr.y + ' dương)' + (v.y ? '' : ' · tính theo năm ' + Y);
     }
   }
   function saveDeath() {
@@ -1129,6 +1162,7 @@
 
   /* --- xoá toàn bộ --- */
   function wipeTree() {
+    if (viewOnly()) return;
     var n = state.tree.people.length;
     if (!confirm('Xoá toàn bộ gia phả (' + n + ' người) khỏi máy này?\nNên xuất file sao lưu trước. Không hoàn tác được.')) return;
     var linked = state.special.filter(function (s) { return s.link; });
@@ -1168,7 +1202,7 @@
     if (!tr) throw new Error('format');
     var evs = ((obj && obj.special) || []).map(sanitize).filter(function (x) { return x && x.link; });
     state.special = state.special.filter(function (s) { return !s.link; }).concat(evs);
-    state.tree = tr; state.troot = tr.roots.length ? tr.roots[0].id : null; state.tsel = null; tvFit = true;
+    state.tree = tr; state.troot = tr.roots.length ? tr.roots[0].id : null; state.tsel = null; tvFit = true; state.edit = false;
     persistTree(); persistSpecial();
   }
   function gpTurnOn() { state.set.tree = true; LS.set(KEY_SET, state.set); LS.set(KEY_GPOK, true); }
@@ -1178,19 +1212,41 @@
   function openGpDialog(mode) {
     gpMode = mode;
     if (!(window.crypto && crypto.subtle)) { toast('Trình duyệt này không hỗ trợ mã hoá (cần HTTPS)'); return; }
-    var ex = mode === 'export';
-    var title = ex ? 'Xuất gia phả (có mật khẩu)' : (mode === 'update' ? 'Cập nhật gia phả từ web' : 'Mở khoá Gia phả');
-    var text = ex ? 'Đặt mật khẩu để mã hoá. Người nhà cần đúng mật khẩu này để xem. Hãy dùng mật khẩu dài (ví dụ cụm 4–5 từ) và nhớ kỹ, quên là không lấy lại được file.'
-      : 'Nhập mật khẩu gia phả do người trong nhà cung cấp. App sẽ tải file gia phả mã hoá từ web và giải mã trên máy này.';
+    if (mode === 'export' && viewOnly()) return;
+    var ex = mode === 'export', two = ex || mode === 'setlock';
+    var title = ex ? 'Xuất gia phả (có mật khẩu)' : ({ update: 'Cập nhật gia phả từ web', editpw: 'Bật chế độ sửa', setlock: 'Đặt mật khẩu sửa' }[mode] || 'Mở khoá Gia phả');
+    var text = mode === 'editpw' ? 'Nhập mật khẩu sửa gia phả.' : (mode === 'setlock' ? 'Mật khẩu này chỉ người được sửa gia phả biết (khác mật khẩu xem). Đặt xong, gia phả mặc định ở chế độ chỉ xem. Hãy xuất lại file để người nhà nhận được khoá này.' : ex ? 'Đặt mật khẩu để mã hoá. Người nhà cần đúng mật khẩu này để xem. Hãy dùng mật khẩu dài (ví dụ cụm 4–5 từ) và nhớ kỹ, quên là không lấy lại được file.'
+      : 'Nhập mật khẩu gia phả do người trong nhà cung cấp. App sẽ tải file gia phả mã hoá từ web và giải mã trên máy này.');
     dlg.innerHTML = '<form class="form" id="gForm" novalidate autocomplete="off"><h2>' + title + '</h2><p class="note" style="margin:0">' + text + '</p>' +
       '<label>Mật khẩu<input type="password" name="pw" autocomplete="off" autocapitalize="off"></label>' +
-      (ex ? '<label>Nhập lại mật khẩu<input type="password" name="pw2" autocomplete="off" autocapitalize="off"></label>' : '') +
-      '<p class="err" id="formErr"></p><div class="actions"><button type="button" class="btn" id="cancelBtn">Huỷ</button><button type="submit" class="btn primary">' + (ex ? 'Xuất file' : 'Mở') + '</button></div>' +
+      (two ? '<label>Nhập lại mật khẩu<input type="password" name="pw2" autocomplete="off" autocapitalize="off"></label>' : '') +
+      '<p class="err" id="formErr"></p><div class="actions"><button type="button" class="btn" id="cancelBtn">Huỷ</button><button type="submit" class="btn primary">' + (ex ? 'Xuất file' : (mode === 'setlock' ? 'Đặt mật khẩu' : 'Mở')) + '</button></div>' +
       (mode === 'unlock' ? '<button type="button" class="ghost" id="gSelf">Chưa có file gia phả? Bật để tự tạo</button>' : '') + '</form>';
     if (!dlg.open) dlg.showModal();
   }
   function saveGp() {
     var f = $('#gForm').elements, err = $('#formErr'), pw = f.pw.value, btn = $('#gForm button[type=submit]');
+    if (gpMode === 'editpw' || gpMode === 'setlock') {
+      var lk = state.tree.lock;
+      if (gpMode === 'setlock') {
+        if (pw.length < 6) { err.textContent = 'Mật khẩu sửa cần ít nhất 6 ký tự.'; return; }
+        if (pw !== f.pw2.value) { err.textContent = 'Hai lần nhập chưa giống nhau.'; return; }
+        var salt = crypto.getRandomValues(new Uint8Array(16));
+        btn.disabled = true;
+        lockHash(pw, salt, 150000).then(function (h) {
+          state.tree.lock = { salt: b64(salt), iter: 150000, hash: h }; state.edit = true; persistTree();
+          dlg.close(); toast('Đã đặt mật khẩu sửa'); render();
+        });
+        return;
+      }
+      if (!lk) { state.edit = true; dlg.close(); render(); return; }
+      btn.disabled = true;
+      lockHash(pw, unb64(lk.salt), lk.iter).then(function (h) {
+        if (h !== lk.hash) { btn.disabled = false; err.textContent = 'Sai mật khẩu sửa.'; return; }
+        state.edit = true; dlg.close(); toast('Đã bật chế độ sửa'); render();
+      });
+      return;
+    }
     if (gpMode === 'export') {
       if (pw.length < 8) { err.textContent = 'Mật khẩu cần ít nhất 8 ký tự.'; return; }
       if (pw !== f.pw2.value) { err.textContent = 'Hai lần nhập mật khẩu chưa giống nhau.'; return; }
@@ -1275,6 +1331,9 @@
       case 'gpExport': openGpDialog('export'); break;
       case 'gpUpdate': openGpDialog('update'); break;
       case 'gpWipe': wipeTree(); break;
+      case 'gpEditOn': openGpDialog('editpw'); break;
+      case 'gpEditOff': state.edit = false; render(); toast('Đã tắt chế độ sửa'); break;
+      case 'gpSetLock': openGpDialog('setlock'); break;
       case 'install':
         if (state.installEvt) { state.installEvt.prompt(); state.installEvt = null; }
         break;
