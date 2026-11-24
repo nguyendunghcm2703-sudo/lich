@@ -769,30 +769,53 @@
     if (!sp) return [h];
     return h.sex === 'f' && sp.sex === 'm' ? [sp, h] : [h, sp];
   }
+  var mctx = null;
+  function wrapLines(text, maxW, px) {
+    if (!mctx) mctx = document.createElement('canvas').getContext('2d');
+    mctx.font = '700 ' + px + 'px ' + (getComputedStyle(document.body).fontFamily || 'sans-serif');
+    var words = String(text).split(/\s+/).filter(Boolean), lines = [], cur = '';
+    words.forEach(function (w) {
+      var t = cur ? cur + ' ' + w : w;
+      if (cur && mctx.measureText(t).width * 1.04 > maxW) { lines.push(cur); cur = w; } else cur = t;
+    });
+    if (cur) lines.push(cur);
+    return lines.length ? lines : [''];
+  }
+  // đo tên để hiện đủ: xuống dòng, quá 3 dòng thì giảm cỡ chữ
+  function rowInfo(p, solo) {
+    var maxW = FW - 14 - (p.dead ? 14 : 0) - (solo ? 8 : 0), fs = 10.5, lines = wrapLines(p.name, maxW, fs);
+    if (lines.length > 3) { fs = 9; lines = wrapLines(p.name, maxW, fs); }
+    var lh = Math.round(fs * 1.15), yr = yearsOf(p) ? 13 : 0;
+    return { p: p, lines: lines, fs: fs, lh: lh, h: 8 + lines.length * lh + yr };
+  }
   function layoutTree(head) {
-    var items = [], lines = [], seen = {}, maxD = 0;
-    function build(h) {
+    var items = [], lines = [], seen = {}, maxH = [];
+    function build(h, depth) {
       seen[h.id] = 1;
-      var kids = childrenOf(h.id).filter(function (c) { return !seen[c.id]; }).map(build);
+      var ps = frameRows(h), rows = ps.map(function (q) { return rowInfo(q, ps.length === 1); });
+      var fh = rows.reduce(function (a, r) { return a + r.h; }, FP);
+      maxH[depth] = Math.max(maxH[depth] || 0, fh);
+      var kids = childrenOf(h.id).filter(function (c) { return !seen[c.id]; }).map(function (c) { return build(c, depth + 1); });
       var kw = kids.reduce(function (a, k) { return a + k.w; }, 0) + Math.max(0, kids.length - 1) * SG;
-      return { h: h, kids: kids, kw: kw, w: Math.max(FW, kw) };
+      return { h: h, rows: rows, fh: fh, kids: kids, kw: kw, w: Math.max(FW, kw) };
     }
+    var root = build(head, 0), ys = [PAD];
+    for (var d = 1; d < maxH.length; d++) ys[d] = ys[d - 1] + maxH[d - 1] + LG;
     function place(n, left, depth) {
-      var y = PAD + depth * (FH2 + LG), cx = left + n.w / 2, rows = frameRows(n.h), fh = rows.length * RH + FP;
-      if (depth > maxD) maxD = depth;
+      var y = ys[depth], cx = left + n.w / 2;
       n.cx = cx; n.y = y;
-      items.push({ rows: rows, x: cx - FW / 2, y: y });
+      items.push({ rows: n.rows, x: cx - FW / 2, y: y });
       if (n.kids.length) {
-        var cur = cx - n.kw / 2, ym = y + FH2 + LG / 2;
+        var cur = cx - n.kw / 2, ym = y + maxH[depth] + LG / 2;
         n.kids.forEach(function (k) { place(k, cur, depth + 1); cur += k.w + SG; });
-        lines.push([cx, y + fh, cx, ym]);
+        lines.push([cx, y + n.fh, cx, ym]);
         lines.push([Math.min(cx, n.kids[0].cx), ym, Math.max(cx, n.kids[n.kids.length - 1].cx), ym]);
         n.kids.forEach(function (k) { lines.push([k.cx, ym, k.cx, k.y]); });
       }
     }
-    var root = build(head);
     place(root, PAD, 0);
-    return { items: items, lines: lines, w: root.w + 2 * PAD, h: (maxD + 1) * FH2 + maxD * LG + 2 * PAD };
+    var total = 2 * PAD + (maxH.length - 1) * LG; maxH.forEach(function (v) { total += v; });
+    return { items: items, lines: lines, w: root.w + 2 * PAD, h: total };
   }
 
   function yearsOf(p) {
@@ -835,9 +858,10 @@
       '<svg width="' + lay.w + '" height="' + lay.h + '" aria-hidden="true">' + lay.lines.map(function (l) {
         return '<line x1="' + l[0] + '" y1="' + l[1] + '" x2="' + l[2] + '" y2="' + l[3] + '"/>';
       }).join('') + '</svg>' + lay.items.map(function (it) {
-        return '<div class="pf" style="left:' + it.x + 'px;top:' + it.y + 'px">' + it.rows.map(function (p) {
-          return '<div class="pr ' + p.sex + (it.rows.length === 1 ? ' solo' : '') + (p.dead ? ' dead' : '') + (sel && sel.id === p.id ? ' sel' : '') + '" data-pid="' + esc(p.id) + '">' +
-            '<b>' + esc(p.name) + '</b><i>' + esc(yearsOf(p)) + '</i>' + (p.dead ? '<span class="pl">' + ICON.lotus + '</span>' : '') + '</div>';
+        return '<div class="pf" style="left:' + it.x + 'px;top:' + it.y + 'px">' + it.rows.map(function (r) {
+          var p = r.p;
+          return '<div class="pr ' + p.sex + (it.rows.length === 1 ? ' solo' : '') + (p.dead ? ' dead' : '') + (sel && sel.id === p.id ? ' sel' : '') + '" data-pid="' + esc(p.id) + '" style="height:' + r.h + 'px">' +
+            '<b style="font-size:' + r.fs + 'px;line-height:' + r.lh + 'px">' + r.lines.map(esc).join('<br>') + '</b>' + (yearsOf(p) ? '<i>' + esc(yearsOf(p)) + '</i>' : '') + (p.dead ? '<span class="pl">' + ICON.lotus + '</span>' : '') + '</div>';
         }).join('') + '</div>';
       }).join('') + '</div></div>';
     html += '<div class="tree-fabs"><button data-act="tZoomIn" aria-label="Phóng to">＋</button><button data-act="tZoomOut" aria-label="Thu nhỏ">−</button><button data-act="tFit" aria-label="Vừa khung">⤢</button></div></div>';
@@ -1042,12 +1066,12 @@
     var p = personById(id); if (!p) return;
     dctx = p.id;
     var dd = p.dead && p.death ? p.death : { cal: 'lunar', d: '', m: '', y: '', leap: false };
+    if (dd.cal === 'solar') { var dl0 = deathLunar(p); if (dl0) dd = { cal: 'lunar', d: dl0.d, m: dl0.m, y: dl0.y, leap: dl0.leap }; }
     dlg.innerHTML = '<form class="form" id="dForm" novalidate autocomplete="off"><h2>Ngày giỗ · ' + esc(p.name) + '</h2>' +
-      '<div class="seg" role="group" aria-label="Loại lịch"><label><input type="radio" name="dcal" value="solar"' + (dd.cal === 'solar' ? ' checked' : '') + '><span>Dương lịch</span></label>' +
-      '<label><input type="radio" name="dcal" value="lunar"' + (dd.cal === 'lunar' ? ' checked' : '') + '><span>Âm lịch</span></label></div>' +
-      '<div class="row3"><label>Ngày mất<input type="number" name="d" inputmode="numeric" min="1" max="31" value="' + esc(dd.d || '') + '"></label>' +
+      '<p class="note" style="margin:0">Ngày giỗ luôn tính theo <b>âm lịch</b>.</p><input type="hidden" name="dcal" value="lunar">' +
+      '<div class="row3"><label>Ngày mất (âm)<input type="number" name="d" inputmode="numeric" min="1" max="31" value="' + esc(dd.d || '') + '"></label>' +
       '<label>Tháng<input type="number" name="m" inputmode="numeric" min="1" max="12" value="' + esc(dd.m || '') + '"></label>' +
-      '<label>Năm mất<input type="number" name="y" inputmode="numeric" min="1000" max="2199" placeholder="VD: 2022" value="' + esc(dd.y || '') + '"></label></div>' +
+      '<label>Năm mất (âm)<input type="number" name="y" inputmode="numeric" min="1000" max="2199" placeholder="VD: 2022" value="' + esc(dd.y || '') + '"></label></div>' +
       '<label class="chk" id="dLeap"><input type="checkbox" name="leap"' + (dd.leap ? ' checked' : '') + '> Tháng nhuận</label>' +
       '<p class="preview" id="dprev"></p>' +
       '<label class="chk sw"><span>Thêm vào Sự kiện (Giỗ hằng năm)</span><input type="checkbox" name="ev"' + (linkedEvent(p) ? ' checked' : '') + '></label>' +
