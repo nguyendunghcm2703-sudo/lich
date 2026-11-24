@@ -56,7 +56,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
-  if (url.pathname.endsWith('/holidays.json') || url.pathname.endsWith('/songs.json')) {
+  if (url.pathname.endsWith('/holidays.json') || url.pathname.endsWith('/songs.json') || url.pathname.endsWith('/giapha.enc.json')) {
     e.respondWith(networkFirst(req));
   } else if (req.mode === 'navigate') {
     e.respondWith(staleWhileRevalidate(req, new Request(new URL('index.html', self.registration.scope).href)));

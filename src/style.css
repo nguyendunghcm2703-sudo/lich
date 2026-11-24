@@ -330,22 +330,28 @@ body.on-tree { overflow: hidden; }
 .tree-top::-webkit-scrollbar { display: none; }
 .fchip.add { border-style: dashed; color: var(--red); font-weight: 700; }
 .tree-desc { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 16px 6px; font-size: .86rem; color: var(--ink); font-weight: 600; flex: none; }
-.tree-vp { flex: 1; min-height: 0; position: relative; overflow: hidden; touch-action: none; background: var(--soft); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); cursor: grab; user-select: none; -webkit-user-select: none; }
+.tree-stage { flex: 1; min-height: 0; position: relative; display: flex; }
+.tree-vp { flex: 1; min-height: 0; position: relative; overflow: hidden; touch-action: none; background: radial-gradient(ellipse at 50% 20%, #8d1c20, #5e0f13 75%); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); cursor: grab; user-select: none; -webkit-user-select: none; }
 .tree-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 .tree-world svg { position: absolute; left: 0; top: 0; pointer-events: none; }
-.tree-world line { stroke: #b79b7a; stroke-width: 2; stroke-linecap: square; }
-.pc {
-  position: absolute; width: 88px; height: 54px; box-sizing: border-box; border-radius: 10px; padding: 3px 6px 0;
-  background: var(--surface); border: 1px solid var(--line); border-top: 4px solid #3b82c4; overflow: hidden;
+.tree-world line { stroke: #d9b15a; stroke-width: 2; stroke-linecap: square; }
+.pf {
+  position: absolute; width: 120px; border-radius: 8px; overflow: hidden;
+  background: linear-gradient(#fcefc2, #f2d685); border: 1.5px solid #c9962b; box-shadow: 0 2px 6px rgba(0, 0, 0, .4); color: #6b1115;
 }
-.pc.f { border-top-color: #e8528c; }
-.pc b { display: block; font-size: 11.5px; line-height: 1.2; padding-right: 12px; max-height: 28px; overflow: hidden; }
-.pc i { display: block; font-style: normal; font-size: 10px; color: var(--muted); margin-top: 1px; }
-.pc.dead { background: var(--soft); }
-.pc.sel { border: 2px solid var(--red); border-top: 4px solid var(--red); }
-.pc .pl { position: absolute; right: 3px; top: 5px; }
-.pc .pl svg, .tb-name .pl svg { width: 14px; height: 14px; display: block; }
-.tree-fabs { position: absolute; right: 12px; top: 96px; display: flex; flex-direction: column; gap: 8px; z-index: 2; }
+.pr { position: relative; height: 37px; padding: 4px 7px 0; }
+.pr + .pr { border-top: 1px solid #c9962b; }
+.pr b { display: block; font-size: 10.5px; line-height: 1.15; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pr i { display: block; font-style: normal; font-size: 9.5px; color: #8a4a1d; margin-top: 2px; }
+.pr.dead { background: rgba(120, 70, 10, .22); }
+.pr.dead b { padding-right: 14px; }
+.pr.sel { background: #fff6cf; box-shadow: inset 0 0 0 2px #b3201f; }
+.pr.solo b, .pr.solo i { padding-left: 8px; }
+.pr.solo::before { content: ""; position: absolute; left: 4px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: #3b82c4; }
+.pr.solo.f::before { background: #e8528c; }
+.pr .pl { position: absolute; right: 4px; top: 5px; }
+.pr .pl svg, .tb-name .pl svg { width: 13px; height: 13px; display: block; }
+.tree-fabs { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 2; }
 .tree-fabs button { width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--surface); font-size: 1.2rem; box-shadow: 0 2px 8px rgba(0, 0, 0, .22); line-height: 1; }
 .tree-hint { flex: none; text-align: center; font-size: .76rem; color: var(--muted); padding: 8px 12px; }
 .tree-bar { flex: none; background: var(--surface); padding: 10px 16px 12px; box-shadow: 0 -6px 16px rgba(0, 0, 0, .12); }
@@ -353,5 +359,6 @@ body.on-tree { overflow: hidden; }
 .tb-sub { color: var(--muted); font-size: .82rem; margin-top: 1px; overflow-wrap: anywhere; }
 .tb-btns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
 .tb-btns button { height: 44px; border-radius: 12px; border: 0; background: var(--soft); font-weight: 700; font-size: .8rem; white-space: nowrap; padding: 0; }
-.tb-btns button.death { border: 1.5px solid var(--red); color: var(--red); background: color-mix(in srgb, var(--red) 8%, var(--surface)); }
 .tb-btns button:disabled { opacity: .4; }
+
+.ghost { background: none; border: 0; color: var(--muted); opacity: .6; font-size: .78rem; text-align: left; padding: 4px 0; }

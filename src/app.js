@@ -6,7 +6,7 @@
   if (APP_VERSION.indexOf('__') === 0) APP_VERSION = 'dev';
 
   /* ---------- Hằng số & tiện ích ---------- */
-  var KEY_SPECIAL = 'lv_special_v1', KEY_HOL = 'lv_holidays_v1', KEY_CHECK = 'lv_hol_checked_v1', KEY_SET = 'lv_settings_v1', KEY_TREE = 'lv_tree_v1';
+  var KEY_SPECIAL = 'lv_special_v1', KEY_HOL = 'lv_holidays_v1', KEY_CHECK = 'lv_hol_checked_v1', KEY_SET = 'lv_settings_v1', KEY_TREE = 'lv_tree_v1', KEY_GPOK = 'lv_gp_ok_v1', GP_FILE = 'giapha.enc.json', GP_ITER = 600000;
   var DOW = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
   var DOW_S = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
   var ICON = {
@@ -557,7 +557,7 @@
   dlg.addEventListener('change', function () { syncForm(); syncDeath(); });
   dlg.addEventListener('submit', function (e) {
     e.preventDefault();
-    ({ spForm: saveForm, pForm: savePerson, dForm: saveDeath, rForm: saveRoot })[e.target.id]();
+    ({ spForm: saveForm, pForm: savePerson, dForm: saveDeath, rForm: saveRoot, gForm: saveGp })[e.target.id]();
   });
   dlg.addEventListener('click', function (e) {
     var id = e.target.id;
@@ -565,6 +565,8 @@
     else if (id === 'delBtn') deleteSpecial();
     else if (id === 'swapCal') swapCal();
     else if (id === 'pDel') deletePerson();
+    else if (id === 'pDead') { pDeadFlag = true; savePerson(); }
+    else if (id === 'gSelf') gpEnableSelf();
     else if (id === 'dClear') clearDeath();
     else if (id === 'rDel') deleteRoot();
   });
@@ -587,11 +589,16 @@
       '<label class="set-line sw"><span>Hiện Gia phả</span><input type="checkbox" data-set="tree"' + (state.set.tree ? ' checked' : '') + '></label>' +
       '<label class="set-line sw"><span>Hiện ngày lễ Mỹ (được nghỉ)</span><input type="checkbox" data-set="us"' + (state.set.us ? ' checked' : '') + '></label>' +
       '<p class="note">Tắt Gia phả chỉ ẩn đi, dữ liệu vẫn được giữ lại.</p></section>' + html;
+    if (state.set.tree) html += '<section class="card"><h2>Gia phả</h2>' +
+      '<div class="set-line"><span>Đang lưu</span><span>' + state.tree.people.length + ' người · ' + state.tree.roots.length + ' nhánh</span></div>' +
+      '<div class="btns"><button class="btn primary" data-act="gpExport">Xuất gia phả (có mật khẩu)</button><button class="btn" data-act="gpUpdate">Cập nhật từ web</button></div>' +
+      '<div class="btns"><button class="btn danger" data-act="gpWipe">Xoá toàn bộ gia phả</button></div>' +
+      '<p class="note">Xuất ra file mã hoá <b>giapha.enc.json</b>, đưa lên cùng thư mục app trên GitHub để cả nhà có mật khẩu mới xem được. “Cập nhật từ web” thay gia phả trên máy bằng bản đó.</p></section>';
     html += '<section class="card"><h2>Sao lưu dữ liệu</h2>' +
       '<div class="set-line"><span>Sự kiện</span><span>' + state.special.length + '</span></div>' +
       '<div class="set-line"><span>Gia phả</span><span>' + state.tree.people.length + ' người</span></div>' +
       '<div class="btns"><button class="btn" data-act="export">Xuất file JSON</button><button class="btn" data-act="import">Nhập từ file</button></div>' +
-      '<p class="note">Dữ liệu chỉ nằm trên máy này. Hãy xuất file để sao lưu hoặc chuyển sang điện thoại khác.</p></section>';
+      '<p class="note">Dữ liệu chỉ nằm trên máy này. File sao lưu này <b>không mã hoá</b> (có cả gia phả), hãy giữ riêng, đừng đưa lên GitHub.</p></section>';
     html += '<section class="card"><h2>Ứng dụng</h2>' +
       '<div class="set-line"><span>Múi giờ</span><span>Việt Nam (UTC+7)</span></div>' +
       '<div class="set-line"><span>Phiên bản app</span><span>' + esc(APP_VERSION) + '</span></div>' +
@@ -683,9 +690,9 @@
   }
 
   /* ---------- Gia phả ---------- */
-  var CW = 88, CH = 54, CG = 8, SG = 16, LG = 58, PAD = 24;
+  var FW = 120, RH = 37, FP = 3, SG = 14, LG = 46, PAD = 20, FH2 = 2 * RH + FP;
   var tv = { x: 0, y: 0, k: 1 }, tvFit = true, tsize = null;
-  var pctx = null, dctx = null, rctx = null;
+  var pctx = null, dctx = null, rctx = null, pDeadFlag = false;
 
   function persistTree() { if (!LS.set(KEY_TREE, state.tree)) toast('Không lưu được dữ liệu trên trình duyệt này'); }
   function personById(id) { var a = state.tree.people; for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null; }
@@ -756,36 +763,36 @@
     return { roots: roots, people: people };
   }
 
-  /* --- bố cục cây --- */
+  /* --- bố cục cây: mỗi cặp vợ chồng là một khung (chồng trên, vợ dưới) --- */
+  function frameRows(h) {
+    var sp = h.spouse ? personById(h.spouse) : null;
+    if (!sp) return [h];
+    return h.sex === 'f' && sp.sex === 'm' ? [sp, h] : [h, sp];
+  }
   function layoutTree(head) {
     var items = [], lines = [], seen = {}, maxD = 0;
     function build(h) {
       seen[h.id] = 1;
-      var sp = h.spouse ? personById(h.spouse) : null;
       var kids = childrenOf(h.id).filter(function (c) { return !seen[c.id]; }).map(build);
-      var nw = sp ? 2 * CW + CG : CW;
       var kw = kids.reduce(function (a, k) { return a + k.w; }, 0) + Math.max(0, kids.length - 1) * SG;
-      return { h: h, sp: sp, kids: kids, nw: nw, kw: kw, w: Math.max(nw, kw) };
+      return { h: h, kids: kids, kw: kw, w: Math.max(FW, kw) };
     }
     function place(n, left, depth) {
-      var y = depth * (CH + LG) + PAD, x0 = left + n.w / 2 - n.nw / 2, cx = left + n.w / 2;
+      var y = PAD + depth * (FH2 + LG), cx = left + n.w / 2, rows = frameRows(n.h), fh = rows.length * RH + FP;
       if (depth > maxD) maxD = depth;
-      items.push({ p: n.h, x: x0, y: y });
-      if (n.sp) { items.push({ p: n.sp, x: x0 + CW + CG, y: y }); lines.push([x0 + CW, y + CH / 2, x0 + CW + CG, y + CH / 2]); }
-      n.ax = x0 + CW / 2;
+      n.cx = cx; n.y = y;
+      items.push({ rows: rows, x: cx - FW / 2, y: y });
       if (n.kids.length) {
-        var cur = cx - n.kw / 2;
+        var cur = cx - n.kw / 2, ym = y + FH2 + LG / 2;
         n.kids.forEach(function (k) { place(k, cur, depth + 1); cur += k.w + SG; });
-        var ym = y + CH + LG / 2, y0 = n.sp ? y + CH / 2 : y + CH;
-        lines.push([cx, y0, cx, ym]);
-        lines.push([Math.min(cx, n.kids[0].ax), ym, Math.max(cx, n.kids[n.kids.length - 1].ax), ym]);
-        n.kids.forEach(function (k) { lines.push([k.ax, ym, k.ax, k.y]); });
+        lines.push([cx, y + fh, cx, ym]);
+        lines.push([Math.min(cx, n.kids[0].cx), ym, Math.max(cx, n.kids[n.kids.length - 1].cx), ym]);
+        n.kids.forEach(function (k) { lines.push([k.cx, ym, k.cx, k.y]); });
       }
-      n.y = y;
     }
     var root = build(head);
     place(root, PAD, 0);
-    return { items: items, lines: lines, w: root.w + 2 * PAD, h: (maxD + 1) * CH + maxD * LG + 2 * PAD };
+    return { items: items, lines: lines, w: root.w + 2 * PAD, h: (maxD + 1) * FH2 + maxD * LG + 2 * PAD };
   }
 
   function yearsOf(p) {
@@ -824,22 +831,23 @@
     }).join('') + '<button class="fchip add" data-act="tAddRoot">＋ Thêm gốc</button></div>';
     html += '<div class="tree-desc"><span>' + esc(sel ? descOf(cur, genOf(sel)) : descOf(cur, cur.gen) + ' (người gốc)') + '</span><button class="linkbtn" data-act="tEditRoot">Sửa nhánh</button></div>';
 
-    html += '<div class="tree-vp" id="tvp"><div class="tree-world" id="tworld" style="width:' + lay.w + 'px;height:' + lay.h + 'px">' +
+    html += '<div class="tree-stage"><div class="tree-vp" id="tvp"><div class="tree-world" id="tworld" style="width:' + lay.w + 'px;height:' + lay.h + 'px">' +
       '<svg width="' + lay.w + '" height="' + lay.h + '" aria-hidden="true">' + lay.lines.map(function (l) {
         return '<line x1="' + l[0] + '" y1="' + l[1] + '" x2="' + l[2] + '" y2="' + l[3] + '"/>';
       }).join('') + '</svg>' + lay.items.map(function (it) {
-        var p = it.p;
-        return '<div class="pc ' + p.sex + (p.dead ? ' dead' : '') + (sel && sel.id === p.id ? ' sel' : '') + '" data-pid="' + esc(p.id) + '" style="left:' + it.x + 'px;top:' + it.y + 'px">' +
-          '<b>' + esc(p.name) + '</b><i>' + esc(yearsOf(p)) + '</i>' + (p.dead ? '<span class="pl">' + ICON.lotus + '</span>' : '') + '</div>';
+        return '<div class="pf" style="left:' + it.x + 'px;top:' + it.y + 'px">' + it.rows.map(function (p) {
+          return '<div class="pr ' + p.sex + (it.rows.length === 1 ? ' solo' : '') + (p.dead ? ' dead' : '') + (sel && sel.id === p.id ? ' sel' : '') + '" data-pid="' + esc(p.id) + '">' +
+            '<b>' + esc(p.name) + '</b><i>' + esc(yearsOf(p)) + '</i>' + (p.dead ? '<span class="pl">' + ICON.lotus + '</span>' : '') + '</div>';
+        }).join('') + '</div>';
       }).join('') + '</div></div>';
-    html += '<div class="tree-fabs"><button data-act="tZoomIn" aria-label="Phóng to">＋</button><button data-act="tZoomOut" aria-label="Thu nhỏ">−</button><button data-act="tFit" aria-label="Vừa khung">⤢</button></div>';
+    html += '<div class="tree-fabs"><button data-act="tZoomIn" aria-label="Phóng to">＋</button><button data-act="tZoomOut" aria-label="Thu nhỏ">−</button><button data-act="tFit" aria-label="Vừa khung">⤢</button></div></div>';
     if (!sel) html += '<div class="tree-hint">Kéo để di chuyển · Chụm hai ngón để phóng to · Chạm vào một người</div>';
     else {
       var g = genOf(sel);
       html += '<div class="tree-bar"><div class="tb-name">' + esc(sel.name) + (sel.dead ? '<span class="pl">' + ICON.lotus + '</span>' : '') + '</div>' +
         '<div class="tb-sub">' + esc(personInfo(sel) || '—') + '</div>' +
         '<div class="tb-sub">' + esc(g ? descOf(cur, g) : '') + '</div>' +
-        '<div class="tb-btns"><button data-act="tEdit">Sửa</button><button class="death" data-act="tDeath">Ngày giỗ</button>' +
+        '<div class="tb-btns"><button data-act="tEdit">Sửa</button><button data-act="tDeath">Ngày giỗ</button>' +
         '<button data-act="tSpouse"' + (sel.spouse ? ' disabled' : '') + '>＋ Vợ/chồng</button><button data-act="tChild">＋ Con</button></div></div>';
     }
     html += '</div>';
@@ -987,12 +995,13 @@
       '<div class="lbl">Ngày sinh (không bắt buộc)</div><div class="row3"><label>Ngày<input type="number" name="bd" inputmode="numeric" min="1" max="31" value="' + esc(base.bd || '') + '"></label>' +
       '<label>Tháng<input type="number" name="bm" inputmode="numeric" min="1" max="12" value="' + esc(base.bm || '') + '"></label>' +
       '<label>Năm<input type="number" name="by" inputmode="numeric" min="1000" max="2199" value="' + esc(base.by || '') + '"></label></div>' +
-      '<p class="note" style="margin:0">Mặc định là còn sống. Muốn ghi ngày mất, bấm “Ngày giỗ” trên thẻ người đó.</p>' +
-      '<p class="err" id="formErr"></p><div class="actions">' + (p ? '<button type="button" class="btn danger" id="pDel">Xoá</button><span class="grow"></span>' : '') +
+      '<p class="err" id="formErr"></p>' +
+      '<button type="button" class="ghost" id="pDead">Người đã mất? Nhập ngày giỗ</button><div class="actions">' + (p ? '<button type="button" class="btn danger" id="pDel">Xoá</button><span class="grow"></span>' : '') +
       '<button type="button" class="btn" id="cancelBtn">Huỷ</button><button type="submit" class="btn primary">Lưu</button></div></form>';
     if (!dlg.open) dlg.showModal();
   }
   function savePerson() {
+    var goDeath = pDeadFlag; pDeadFlag = false;
     var f = $('#pForm').elements, err = $('#formErr');
     var num = function (n) { var x = parseInt(f[n].value, 10); return isNaN(x) ? null : x; };
     var name = f.pname.value.trim(), bd = num('bd'), bm = num('bm'), by = num('by');
@@ -1013,6 +1022,7 @@
     }
     state.tsel = p.id;
     persistTree(); dlg.close(); toast('Đã lưu'); render();
+    if (goDeath) openDeathForm(p.id);
   }
   function deletePerson() {
     var p = personById(pctx.id); if (!p) return;
@@ -1093,6 +1103,99 @@
     persistTree(); dlg.close(); toast('Đã xoá ngày mất'); render();
   }
 
+  /* --- xoá toàn bộ --- */
+  function wipeTree() {
+    var n = state.tree.people.length;
+    if (!confirm('Xoá toàn bộ gia phả (' + n + ' người) khỏi máy này?\nNên xuất file sao lưu trước. Không hoàn tác được.')) return;
+    var linked = state.special.filter(function (s) { return s.link; });
+    if (linked.length && confirm('Xoá luôn ' + linked.length + ' ngày giỗ đã thêm từ Gia phả trong Sự kiện?')) {
+      state.special = state.special.filter(function (s) { return !s.link; });
+      persistSpecial();
+    } else linked.forEach(function (s) { delete s.link; });
+    if (linked.length) persistSpecial();
+    state.tree = { roots: [], people: [] }; state.troot = null; state.tsel = null; tvFit = true;
+    persistTree(); toast('Đã xoá gia phả'); render();
+  }
+
+  /* --- mã hoá file gia phả (PBKDF2 + AES-GCM) --- */
+  function b64(buf) { var a = new Uint8Array(buf), s = ''; for (var i = 0; i < a.length; i += 8192) s += String.fromCharCode.apply(null, a.subarray(i, i + 8192)); return btoa(s); }
+  function unb64(t) { var b = atob(t), a = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
+  function gpKey(pw, salt, iter) {
+    var enc = new TextEncoder();
+    return crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveKey']).then(function (k) {
+      return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: salt, iterations: iter, hash: 'SHA-256' }, k, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+    });
+  }
+  function gpEncrypt(obj, pw) {
+    var salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+    return gpKey(pw, salt, GP_ITER).then(function (key) {
+      return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, new TextEncoder().encode(JSON.stringify(obj)));
+    }).then(function (ct) { return { app: 'lich-viet-giapha', v: 1, iter: GP_ITER, salt: b64(salt), iv: b64(iv), data: b64(ct) }; });
+  }
+  function gpDecrypt(file, pw) {
+    if (!file || file.app !== 'lich-viet-giapha' || !file.salt || !file.iv || !file.data) return Promise.reject(new Error('format'));
+    var iter = Math.min(Math.max(parseInt(file.iter, 10) || GP_ITER, 100000), 2000000);
+    return gpKey(pw, unb64(file.salt), iter).then(function (key) {
+      return crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(file.iv) }, key, unb64(file.data));
+    }).then(function (buf) { return JSON.parse(new TextDecoder().decode(buf)); });
+  }
+  function gpApply(obj) {
+    var tr = sanitizeTree(obj && obj.tree);
+    if (!tr) throw new Error('format');
+    var evs = ((obj && obj.special) || []).map(sanitize).filter(function (x) { return x && x.link; });
+    state.special = state.special.filter(function (s) { return !s.link; }).concat(evs);
+    state.tree = tr; state.troot = tr.roots.length ? tr.roots[0].id : null; state.tsel = null; tvFit = true;
+    persistTree(); persistSpecial();
+  }
+  function gpTurnOn() { state.set.tree = true; LS.set(KEY_SET, state.set); LS.set(KEY_GPOK, true); }
+  function gpEnableSelf() { gpTurnOn(); dlg.close(); toast('Đã bật Gia phả'); render(); }
+
+  var gpMode = null;
+  function openGpDialog(mode) {
+    gpMode = mode;
+    if (!(window.crypto && crypto.subtle)) { toast('Trình duyệt này không hỗ trợ mã hoá (cần HTTPS)'); return; }
+    var ex = mode === 'export';
+    var title = ex ? 'Xuất gia phả (có mật khẩu)' : (mode === 'update' ? 'Cập nhật gia phả từ web' : 'Mở khoá Gia phả');
+    var text = ex ? 'Đặt mật khẩu để mã hoá. Người nhà cần đúng mật khẩu này để xem. Hãy dùng mật khẩu dài (ví dụ cụm 4–5 từ) và nhớ kỹ, quên là không lấy lại được file.'
+      : 'Nhập mật khẩu gia phả do người trong nhà cung cấp. App sẽ tải file gia phả mã hoá từ web và giải mã trên máy này.';
+    dlg.innerHTML = '<form class="form" id="gForm" novalidate autocomplete="off"><h2>' + title + '</h2><p class="note" style="margin:0">' + text + '</p>' +
+      '<label>Mật khẩu<input type="password" name="pw" autocomplete="off" autocapitalize="off"></label>' +
+      (ex ? '<label>Nhập lại mật khẩu<input type="password" name="pw2" autocomplete="off" autocapitalize="off"></label>' : '') +
+      '<p class="err" id="formErr"></p><div class="actions"><button type="button" class="btn" id="cancelBtn">Huỷ</button><button type="submit" class="btn primary">' + (ex ? 'Xuất file' : 'Mở') + '</button></div>' +
+      (mode === 'unlock' ? '<button type="button" class="ghost" id="gSelf">Chưa có file gia phả? Bật để tự tạo</button>' : '') + '</form>';
+    if (!dlg.open) dlg.showModal();
+  }
+  function saveGp() {
+    var f = $('#gForm').elements, err = $('#formErr'), pw = f.pw.value, btn = $('#gForm button[type=submit]');
+    if (gpMode === 'export') {
+      if (pw.length < 8) { err.textContent = 'Mật khẩu cần ít nhất 8 ký tự.'; return; }
+      if (pw !== f.pw2.value) { err.textContent = 'Hai lần nhập mật khẩu chưa giống nhau.'; return; }
+      btn.disabled = true; err.textContent = 'Đang mã hoá…';
+      gpEncrypt({ tree: state.tree, special: state.special.filter(function (s) { return s.link; }) }, pw).then(function (file) {
+        var blob = new Blob([JSON.stringify(file)], { type: 'application/json' });
+        var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = GP_FILE;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 3000);
+        dlg.close(); toast('Đã xuất ' + GP_FILE + '. Đưa file vào thư mục app trên GitHub.');
+      }).catch(function () { btn.disabled = false; err.textContent = 'Không mã hoá được.'; });
+      return;
+    }
+    if (!pw) { err.textContent = 'Hãy nhập mật khẩu.'; return; }
+    btn.disabled = true; err.textContent = 'Đang tải và giải mã…';
+    fetch(GP_FILE, { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error(r.status === 404 ? 'nofile' : 'net');
+      return r.json();
+    }).then(function (file) {
+      return gpDecrypt(file, pw).then(function (obj) { return obj; }, function () { throw new Error('badpw'); });
+    }).then(function (obj) {
+      if (state.tree.people.length && gpMode === 'update' && !confirm('Thay gia phả trên máy này bằng bản từ web? Phần sửa chỉ có trên máy này sẽ mất.')) { btn.disabled = false; err.textContent = ''; return; }
+      gpApply(obj); gpTurnOn(); dlg.close(); toast('Đã mở Gia phả'); render();
+    }).catch(function (e) {
+      btn.disabled = false;
+      err.textContent = e.message === 'badpw' ? 'Sai mật khẩu, hoặc file gia phả bị hỏng.' : (e.message === 'nofile' ? 'Trên web chưa có file ' + GP_FILE + '.' : (e.message === 'net' ? 'Không tải được file gia phả.' : 'Không đọc được file gia phả.'));
+    });
+  }
+
   /* ---------- Điều khiển chung ---------- */
   var toastTimer;
   function toast(msg) {
@@ -1145,6 +1248,9 @@
       case 'tDeath': openDeathForm(state.tsel); break;
       case 'tSpouse': openPersonForm(null, { kind: 'spouse', of: state.tsel }); break;
       case 'tChild': openPersonForm(null, { kind: 'child', of: state.tsel }); break;
+      case 'gpExport': openGpDialog('export'); break;
+      case 'gpUpdate': openGpDialog('update'); break;
+      case 'gpWipe': wipeTree(); break;
       case 'install':
         if (state.installEvt) { state.installEvt.prompt(); state.installEvt = null; }
         break;
@@ -1156,6 +1262,7 @@
   main.addEventListener('change', function (e) {
     if (e.target.id === 'jump' && e.target.value) setSel(parseKey(e.target.value));
     var k = e.target.dataset && e.target.dataset.set;
+    if (k === 'tree' && e.target.checked && !LS.get(KEY_GPOK, false)) { e.target.checked = false; openGpDialog('unlock'); return; }
     if (k) { state.set[k] = e.target.checked; LS.set(KEY_SET, state.set); yearCache = {}; render(); }
   });
   $('#importFile').addEventListener('change', function (e) {

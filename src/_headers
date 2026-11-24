@@ -4,6 +4,9 @@
 /holidays.json
   Cache-Control: no-cache, no-store, must-revalidate
 
+/giapha.enc.json
+  Cache-Control: no-cache, no-store, must-revalidate
+
 /manifest.json
   Cache-Control: no-cache
 
