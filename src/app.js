@@ -6,7 +6,7 @@
   if (APP_VERSION.indexOf('__') === 0) APP_VERSION = 'dev';
 
   /* ---------- Hằng số & tiện ích ---------- */
-  var KEY_SPECIAL = 'lv_special_v1', KEY_HOL = 'lv_holidays_v1', KEY_CHECK = 'lv_hol_checked_v1', KEY_SET = 'lv_settings_v1', KEY_TREE = 'lv_tree_v1', KEY_GPOK = 'lv_gp_ok_v1', GP_FILE = 'giapha.enc.json', GP_ITER = 600000;
+  var KEY_SPECIAL = 'lv_special_v1', KEY_HOL = 'lv_holidays_v1', KEY_CHECK = 'lv_hol_checked_v1', KEY_SET = 'lv_settings_v1';
   var DOW = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
   var DOW_S = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
   var ICON = {
@@ -49,17 +49,14 @@
     tab: 'today',
     today: vnToday(),
     special: LS.get(KEY_SPECIAL, []),
-    set: Object.assign({ us: false, tree: false }, LS.get(KEY_SET, {})),
-    tree: LS.get(KEY_TREE, null),
+    set: Object.assign({ us: false }, LS.get(KEY_SET, {})),
     holidays: LS.get(KEY_HOL, null),
     filter: 'all',
     q: '',
     installEvt: null
   };
   if (!Array.isArray(state.special)) state.special = [];
-  state.special.forEach(function (s) { if (!GROUPS[s.group]) s.group = 'other'; if (s.link && s.shift == null) s.shift = -1; }); // gộp "Kỷ niệm" cũ vào "Khác"
-  if (!state.tree || !Array.isArray(state.tree.people) || !Array.isArray(state.tree.roots)) state.tree = { roots: [], people: [] };
-  state.tsel = null; state.edit = false; state.troot = state.tree.roots.length ? state.tree.roots[0].id : null;
+  state.special.forEach(function (s) { if (!GROUPS[s.group]) s.group = 'other'; }); // gộp "Kỷ niệm" cũ vào "Khác"
   state.view = { y: state.today.y, m: state.today.m };
   state.sel = { y: state.today.y, m: state.today.m, d: state.today.d };
 
@@ -403,7 +400,6 @@
       var cal = s.cal === 'lunar' ? 'Âm lịch ' + s.d + '/' + s.m + (s.leap ? ' nhuận' : '') : 'Dương lịch ' + s.d + '/' + s.m;
       if (s.shift && s.cal === 'lunar') cal = 'Mất ' + s.d + '/' + s.m + ' âm · giỗ trước 1 ngày';
       var meta = [cal + (s.repeat ? ' · mỗi năm' : ' · ' + s.y)];
-      if (s.link) meta.push('từ Gia phả');
       var extra = '';
       if (o && !o.past) {
         var ev = { group: s.group, n: o.n };
@@ -527,10 +523,7 @@
     var item = { id: editingId || uid(), name: v.name, group: v.group, cal: v.cal, d: v.d, m: v.m, y: v.y, leap: v.leap, repeat: v.repeat, remind: v.remind, note: v.note };
     var i = state.special.map(function (s) { return s.id; }).indexOf(item.id);
     var old = i >= 0 ? state.special[i] : null;
-    if (old && old.link) { // sửa tay ngày tháng thì tách khỏi Gia phả
-      if (old.cal === item.cal && old.d === item.d && old.m === item.m && old.y === item.y && !!old.leap === item.leap) { item.link = old.link; item.shift = old.shift; }
-      else unlinkPerson(old.link);
-    }
+    if (old && old.shift && old.cal === item.cal && old.d === item.d && old.m === item.m && old.y === item.y && !!old.leap === item.leap) item.shift = old.shift; // giữ "giỗ trước 1 ngày" của dữ liệu cũ
     if (i >= 0) state.special[i] = item; else state.special.push(item);
     persistSpecial();
     dlg.close();
@@ -547,7 +540,6 @@
     var s = state.special.filter(function (x) { return x.id === editingId; })[0];
     if (!s || !confirm('Xoá "' + s.name + '"?')) return;
     state.special = state.special.filter(function (x) { return x.id !== editingId; });
-    if (s.link) unlinkPerson(s.link);
     persistSpecial();
     dlg.close();
     toast('Đã xoá');
@@ -555,22 +547,17 @@
   }
 
   dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
-  dlg.addEventListener('input', function () { syncForm(); syncDeath(); });
-  dlg.addEventListener('change', function () { syncForm(); syncDeath(); });
+  dlg.addEventListener('input', function () { syncForm(); });
+  dlg.addEventListener('change', function () { syncForm(); });
   dlg.addEventListener('submit', function (e) {
     e.preventDefault();
-    ({ spForm: saveForm, pForm: savePerson, dForm: saveDeath, rForm: saveRoot, gForm: saveGp })[e.target.id]();
+    if (e.target.id === 'spForm') saveForm();
   });
   dlg.addEventListener('click', function (e) {
     var id = e.target.id;
     if (id === 'cancelBtn') dlg.close();
     else if (id === 'delBtn') deleteSpecial();
     else if (id === 'swapCal') swapCal();
-    else if (id === 'pDel') deletePerson();
-    else if (id === 'pDead') { pDeadFlag = true; savePerson(); }
-    else if (id === 'gSelf') gpEnableSelf();
-    else if (id === 'dClear') clearDeath();
-    else if (id === 'rDel') deleteRoot();
   });
 
   /* ---------- Tab: Cài đặt ---------- */
@@ -588,28 +575,11 @@
       '<div class="btns"><button class="btn primary" data-act="check">Kiểm tra cập nhật</button></div>' +
       '<p class="note">App tự kiểm tra mỗi lần mở khi có mạng. Không có mạng thì dùng bản đã lưu.</p></section>';
     html = '<section class="card"><h2>Hiển thị</h2>' +
-      '<label class="set-line sw"><span>Hiện Gia phả</span><input type="checkbox" data-set="tree"' + (state.set.tree ? ' checked' : '') + '></label>' +
-      '<label class="set-line sw"><span>Hiện ngày lễ Mỹ (được nghỉ)</span><input type="checkbox" data-set="us"' + (state.set.us ? ' checked' : '') + '></label>' +
-      '<p class="note">Tắt Gia phả chỉ ẩn đi, dữ liệu vẫn được giữ lại.</p></section>' + html;
-    if (state.set.tree) {
-      var ed = canEdit(), lk = !!state.tree.lock;
-      html += '<section class="card"><h2>Gia phả</h2>' +
-        '<div class="set-line"><span>Đang lưu</span><span>' + state.tree.people.length + ' người · ' + state.tree.roots.length + ' nhánh</span></div>' +
-        '<div class="set-line"><span>Chế độ</span><span>' + (!lk ? 'Chưa đặt mật khẩu sửa' : (state.edit ? 'Đang sửa' : 'Chỉ xem')) + '</span></div>' +
-        '<div class="btns">' +
-        (lk && !state.edit ? '<button class="btn primary" data-act="gpEditOn">Bật chế độ sửa</button>' : '') +
-        (lk && state.edit ? '<button class="btn primary" data-act="gpEditOff">Tắt chế độ sửa</button>' : '') +
-        (ed ? '<button class="btn" data-act="gpSetLock">' + (lk ? 'Đổi mật khẩu sửa' : 'Đặt mật khẩu sửa') + '</button>' : '') +
-        '</div><div class="btns">' + (ed ? '<button class="btn primary" data-act="gpExport">Xuất gia phả (có mật khẩu)</button>' : '') +
-        '<button class="btn" data-act="gpUpdate">Cập nhật từ web</button></div>' +
-        (ed ? '<div class="btns"><button class="btn danger" data-act="gpWipe">Xoá toàn bộ gia phả</button></div>' : '') +
-        '<p class="note">Gia phả mặc định chỉ để xem. Sửa, xuất file và xoá cần bật chế độ sửa (mật khẩu sửa). Xuất ra file mã hoá <b>giapha.enc.json</b> rồi đưa lên GitHub để cả nhà xem; “Cập nhật từ web” thay gia phả trên máy bằng bản đó.</p></section>';
-    }
+      '<label class="set-line sw"><span>Hiện ngày lễ Mỹ (được nghỉ)</span><input type="checkbox" data-set="us"' + (state.set.us ? ' checked' : '') + '></label></section>' + html;
     html += '<section class="card"><h2>Sao lưu dữ liệu</h2>' +
       '<div class="set-line"><span>Sự kiện</span><span>' + state.special.length + '</span></div>' +
-      '<div class="set-line"><span>Gia phả</span><span>' + state.tree.people.length + ' người</span></div>' +
       '<div class="btns"><button class="btn" data-act="export">Xuất file JSON</button><button class="btn" data-act="import">Nhập từ file</button></div>' +
-      '<p class="note">Dữ liệu chỉ nằm trên máy này. File sao lưu này <b>không mã hoá</b> (có cả gia phả), hãy giữ riêng, đừng đưa lên GitHub.</p></section>';
+      '<p class="note">Dữ liệu chỉ nằm trên máy này. Hãy giữ file sao lưu riêng tư.</p></section>';
     html += '<section class="card"><h2>Ứng dụng</h2>' +
       '<div class="set-line"><span>Múi giờ</span><span>Việt Nam (UTC+7)</span></div>' +
       '<div class="set-line"><span>Phiên bản app</span><span>' + esc(APP_VERSION) + '</span></div>' +
@@ -644,7 +614,7 @@
   }
 
   function exportData() {
-    var blob = new Blob([JSON.stringify({ app: 'lich-viet', version: 1, exportedAt: new Date().toISOString(), special: state.special, tree: state.tree }, null, 2)], { type: 'application/json' });
+    var blob = new Blob([JSON.stringify({ app: 'lich-viet', version: 1, exportedAt: new Date().toISOString(), special: state.special }, null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'lich-viet-sao-luu-' + keyOf(state.today) + '.json';
@@ -666,8 +636,7 @@
       name: x.name.trim().slice(0, 60), group: GROUPS[x.group] ? x.group : 'other', cal: cal, d: d, m: m, y: y,
       leap: cal === 'lunar' && !!x.leap, repeat: repeat, remind: [0, 1, 3, 7].indexOf(Number(x.remind)) >= 0 ? Number(x.remind) : 0,
       note: typeof x.note === 'string' ? x.note.slice(0, 200) : '',
-      link: typeof x.link === 'string' ? x.link : undefined,
-      shift: typeof x.link === 'string' ? (parseInt(x.shift, 10) || (x.shift == null ? -1 : 0)) : undefined
+      shift: cal === 'lunar' && parseInt(x.shift, 10) ? parseInt(x.shift, 10) : undefined
     };
   }
   function importData(file) {
@@ -678,602 +647,18 @@
         var arr = Array.isArray(data) ? data : data.special;
         if (arr != null && !Array.isArray(arr)) throw new Error('format');
         var clean = (arr || []).map(sanitize).filter(Boolean);
-        var tr = data && !Array.isArray(data) ? sanitizeTree(data.tree) : null;
-        if (!clean.length && !(tr && tr.people.length)) { toast('File không có dữ liệu hợp lệ'); return; }
-        if (!confirm('Nhập ' + clean.length + ' sự kiện' + (tr ? ' và ' + tr.people.length + ' người trong gia phả' : '') + '? Mục trùng mã sẽ được ghi đè, mục còn lại giữ nguyên.')) return;
+        if (!clean.length) { toast('File không có dữ liệu hợp lệ'); return; }
+        if (!confirm('Nhập ' + clean.length + ' sự kiện? Mục trùng mã sẽ được ghi đè, mục còn lại giữ nguyên.')) return;
         var byId = {};
         state.special.forEach(function (s) { byId[s.id] = s; });
         clean.forEach(function (s) { byId[s.id] = s; });
         state.special = Object.keys(byId).map(function (k) { return byId[k]; });
         persistSpecial();
-        if (tr) {
-          var pm = {}, rm = {};
-          state.tree.people.forEach(function (x) { pm[x.id] = x; }); tr.people.forEach(function (x) { pm[x.id] = x; });
-          state.tree.roots.forEach(function (x) { rm[x.id] = x; }); tr.roots.forEach(function (x) { rm[x.id] = x; });
-          state.tree = { roots: Object.keys(rm).map(function (k) { return rm[k]; }), people: Object.keys(pm).map(function (k) { return pm[k]; }), lock: state.tree.lock || tr.lock };
-          if (!rm[state.troot]) state.troot = state.tree.roots.length ? state.tree.roots[0].id : null;
-          persistTree();
-        }
         toast('Đã nhập dữ liệu');
         render();
       } catch (e) { toast('File không đúng định dạng'); }
     };
     rd.readAsText(file);
-  }
-
-  /* ---------- Gia phả ---------- */
-  var FW = 120, RH = 37, FP = 3, SG = 14, LG = 46, PAD = 20, FH2 = 2 * RH + FP;
-  var tv = { x: 0, y: 0, k: 1 }, tvFit = true, tsize = null;
-  var pctx = null, dctx = null, rctx = null, pDeadFlag = false;
-
-  function canEdit() { return !state.tree.lock || !!state.edit; }
-  function viewOnly() { if (canEdit()) return false; toast('Đang ở chế độ xem. Bật chế độ sửa trong Cài đặt.'); return true; }
-  function lockHash(pw, salt, iter) {
-    return crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']).then(function (k) {
-      return crypto.subtle.deriveBits({ name: 'PBKDF2', salt: salt, iterations: iter, hash: 'SHA-256' }, k, 256);
-    }).then(function (b) { return b64(b); });
-  }
-  function persistTree() { if (!LS.set(KEY_TREE, state.tree)) toast('Không lưu được dữ liệu trên trình duyệt này'); }
-  function personById(id) { var a = state.tree.people; for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null; }
-  function rootById(id) { return state.tree.roots.filter(function (r) { return r.id === id; })[0] || null; }
-  function headOf(p) { return p.isSpouse && p.spouse ? (personById(p.spouse) || p) : p; }
-  function childrenOf(hid) { return state.tree.people.filter(function (x) { return x.parent === hid && !x.isSpouse; }); }
-  function rootDepth(p) {
-    var h = headOf(p), depth = 0, guard = 0;
-    while (h.parent && guard++ < 60) { var up = personById(h.parent); if (!up) break; h = headOf(up); depth++; }
-    var r = state.tree.roots.filter(function (x) { return x.personId === h.id; })[0] || null;
-    return { root: r, depth: depth };
-  }
-  function genOf(p) { var rd = rootDepth(p); return rd.root ? rd.root.gen + rd.depth : null; }
-  function descOf(root, gen) {
-    var a = [root.clan, root.branch].filter(Boolean).join(' ');
-    return (a ? a + ' · ' : '') + 'đời thứ ' + gen;
-  }
-  function collect(hid, out, seen) {
-    seen = seen || {};
-    if (seen[hid]) return out; seen[hid] = 1;
-    var h = personById(hid); if (!h) return out;
-    out.push(h.id); if (h.spouse) out.push(h.spouse);
-    childrenOf(hid).forEach(function (c) { collect(c.id, out, seen); });
-    return out;
-  }
-  function unlinkPerson(pid) { var p = personById(pid); if (p && p.evId) { p.evId = null; persistTree(); } }
-  function linkedEvent(p) { return p.evId ? state.special.filter(function (s) { return s.id === p.evId; })[0] || null : null; }
-
-  function deathLunar(p) {
-    var dd = p.dead && p.death; if (!dd) return null;
-    if (dd.cal === 'lunar') return { d: dd.d, m: dd.m, y: dd.y || null, leap: !!dd.leap };
-    var Y = dd.y || state.today.y;
-    if (dd.d > L.daysInMonth(dd.m, Y)) return null;
-    var l = L.solarToLunar(dd.d, dd.m, Y);
-    return { d: l.d, m: l.m, y: dd.y ? l.y : null, leap: l.leap };
-  }
-  function deathGio(p) { // ngày giỗ (âm lịch) gần nhất = trước ngày mất 1 ngày
-    var dl = deathLunar(p); if (!dl) return null;
-    var o = nextOcc({ cal: 'lunar', d: dl.d, m: dl.m, y: dl.y, leap: dl.leap, repeat: true, shift: -1 }, state.today);
-    if (!o) return null;
-    var l = L.solarToLunar(o.date.d, o.date.m, o.date.y);
-    return { d: l.d, m: l.m, leap: l.leap, date: o.date };
-  }
-  function syncDeathEvent(p) {
-    var dl = deathLunar(p); if (!dl) return;
-    var old = linkedEvent(p);
-    var ev = { id: old ? old.id : uid(), name: 'Giỗ ' + p.name, group: 'memorial', cal: 'lunar', d: dl.d, m: dl.m, y: dl.y, leap: dl.leap, repeat: true, remind: old ? old.remind : 0, note: old ? old.note : '', link: p.id, shift: -1 };
-    if (old) state.special[state.special.indexOf(old)] = ev; else state.special.push(ev);
-    p.evId = ev.id;
-    persistSpecial();
-  }
-  function removeDeathEvent(p) {
-    if (p.evId) { state.special = state.special.filter(function (s) { return s.id !== p.evId; }); p.evId = null; persistSpecial(); }
-  }
-
-  function sanitizeTree(t) {
-    if (!t || !Array.isArray(t.people) || !Array.isArray(t.roots)) return null;
-    var int = function (v, a, b) { var n = parseInt(v, 10); return n >= a && n <= b ? n : null; };
-    var str = function (v, n) { return typeof v === 'string' ? v.trim().slice(0, n) : ''; };
-    var people = t.people.map(function (x) {
-      if (!x || typeof x.id !== 'string' || !str(x.name, 60)) return null;
-      var dd = x.dead && x.death && int(x.death.d, 1, 31) && int(x.death.m, 1, 12) ? x.death : null;
-      return {
-        id: x.id, name: str(x.name, 60), sex: x.sex === 'f' ? 'f' : 'm', note: str(x.note, 60),
-        bd: int(x.bd, 1, 31), bm: int(x.bm, 1, 12), by: int(x.by, 1000, 2199),
-        dead: !!dd, death: dd ? { cal: dd.cal === 'solar' ? 'solar' : 'lunar', d: int(dd.d, 1, 31), m: int(dd.m, 1, 12), y: int(dd.y, 1000, 2199), leap: !!dd.leap } : null,
-        evId: typeof x.evId === 'string' ? x.evId : null, spouse: typeof x.spouse === 'string' ? x.spouse : null,
-        isSpouse: !!x.isSpouse, parent: typeof x.parent === 'string' ? x.parent : null
-      };
-    }).filter(Boolean);
-    var roots = t.roots.map(function (r) {
-      if (!r || typeof r.id !== 'string' || typeof r.personId !== 'string') return null;
-      return { id: r.id, name: str(r.name, 30) || 'Nhánh', clan: str(r.clan, 30), branch: str(r.branch, 30), gen: int(r.gen, 1, 99) || 1, personId: r.personId };
-    }).filter(Boolean);
-    var lk = t.lock, lock = lk && typeof lk.salt === 'string' && typeof lk.hash === 'string' && lk.salt.length < 100 && lk.hash.length < 100 ? { salt: lk.salt, hash: lk.hash, iter: Math.min(Math.max(parseInt(lk.iter, 10) || 150000, 50000), 1000000) } : undefined;
-    return { roots: roots, people: people, lock: lock };
-  }
-
-  /* --- bố cục cây: mỗi cặp vợ chồng là một khung (chồng trên, vợ dưới) --- */
-  function frameRows(h) {
-    var sp = h.spouse ? personById(h.spouse) : null;
-    if (!sp) return [h];
-    return h.sex === 'f' && sp.sex === 'm' ? [sp, h] : [h, sp];
-  }
-  var mctx = null;
-  function wrapLines(text, maxW, px) {
-    if (!mctx) mctx = document.createElement('canvas').getContext('2d');
-    mctx.font = '700 ' + px + 'px ' + (getComputedStyle(document.body).fontFamily || 'sans-serif');
-    var words = String(text).split(/\s+/).filter(Boolean), lines = [], cur = '';
-    words.forEach(function (w) {
-      var t = cur ? cur + ' ' + w : w;
-      if (cur && mctx.measureText(t).width * 1.04 > maxW) { lines.push(cur); cur = w; } else cur = t;
-    });
-    if (cur) lines.push(cur);
-    return lines.length ? lines : [''];
-  }
-  // đo tên để hiện đủ: xuống dòng, quá 3 dòng thì giảm cỡ chữ
-  function rowInfo(p, solo) {
-    var maxW = FW - 14 - (p.dead ? 14 : 0) - (solo ? 8 : 0), fs = 10.5, lines = wrapLines(p.name, maxW, fs);
-    if (lines.length > 3) { fs = 9; lines = wrapLines(p.name, maxW, fs); }
-    var lh = Math.round(fs * 1.15), yr = yearsOf(p) ? 13 : 0;
-    return { p: p, lines: lines, fs: fs, lh: lh, h: 8 + lines.length * lh + yr };
-  }
-  function layoutTree(head) {
-    var items = [], lines = [], seen = {}, maxH = [];
-    function build(h, depth) {
-      seen[h.id] = 1;
-      var ps = frameRows(h), rows = ps.map(function (q) { return rowInfo(q, ps.length === 1); });
-      var fh = rows.reduce(function (a, r) { return a + r.h; }, FP);
-      maxH[depth] = Math.max(maxH[depth] || 0, fh);
-      var kids = childrenOf(h.id).filter(function (c) { return !seen[c.id]; }).map(function (c) { return build(c, depth + 1); });
-      var kw = kids.reduce(function (a, k) { return a + k.w; }, 0) + Math.max(0, kids.length - 1) * SG;
-      return { h: h, rows: rows, fh: fh, kids: kids, kw: kw, w: Math.max(FW, kw) };
-    }
-    var root = build(head, 0), ys = [PAD];
-    for (var d = 1; d < maxH.length; d++) ys[d] = ys[d - 1] + maxH[d - 1] + LG;
-    function place(n, left, depth) {
-      var y = ys[depth], cx = left + n.w / 2;
-      n.cx = cx; n.y = y;
-      items.push({ rows: n.rows, x: cx - FW / 2, y: y });
-      if (n.kids.length) {
-        var cur = cx - n.kw / 2, ym = y + maxH[depth] + LG / 2;
-        n.kids.forEach(function (k) { place(k, cur, depth + 1); cur += k.w + SG; });
-        lines.push([cx, y + n.fh, cx, ym]);
-        lines.push([Math.min(cx, n.kids[0].cx), ym, Math.max(cx, n.kids[n.kids.length - 1].cx), ym]);
-        n.kids.forEach(function (k) { lines.push([k.cx, ym, k.cx, k.y]); });
-      }
-    }
-    place(root, PAD, 0);
-    var total = 2 * PAD + (maxH.length - 1) * LG; maxH.forEach(function (v) { total += v; });
-    return { items: items, lines: lines, w: root.w + 2 * PAD, h: total };
-  }
-
-  function yearsOf(p) {
-    if (p.dead) { var dy = p.death && p.death.y; return p.by || dy ? (p.by || '?') + ' – ' + (dy || '?') : ''; }
-    return p.by ? String(p.by) : '';
-  }
-  function personInfo(p) {
-    var a = [];
-    if (p.note) a.push(p.note);
-    if (p.by) a.push('sinh ' + (p.bd && p.bm ? p.bd + '/' + p.bm + '/' : '') + p.by);
-    if (p.dead && p.death) {
-      var dd = p.death, dl = deathLunar(p);
-      a.push('mất ' + (dd.cal === 'lunar' ? dd.d + '/' + dd.m + ' âm' + (dd.y ? ' ' + dd.y : '') : dd.d + '/' + dd.m + (dd.y ? '/' + dd.y : '')));
-      var g = deathGio(p);
-      if (g) a.push('giỗ ' + g.d + '/' + g.m + ' âm lịch');
-    } else if (p.dead) a.push('đã mất');
-    return a.join(' · ');
-  }
-
-  function renderTree() {
-    var T = state.tree;
-    var cur = rootById(state.troot) || T.roots[0] || null;
-    var top = ($('.appbar') || { offsetHeight: 56 }).offsetHeight;
-    var html = '<div class="tree-screen" style="top:' + top + 'px">';
-    if (!cur || !personById(cur.personId)) {
-      html += '<div class="tree-empty"><section class="card"><h2>Gia phả</h2>' + (canEdit() ? '<p class="note" style="margin:0 0 12px">Chưa có gia phả. Bắt đầu từ người đời đầu tiên mà bạn muốn ghi, rồi thêm vợ/chồng và con cháu.</p><button class="btn primary block" data-act="tAddRoot">＋ Thêm gốc</button>' : '<p class="note" style="margin:0">Chưa có gia phả. Bật chế độ sửa trong Cài đặt để tạo, hoặc bấm “Cập nhật từ web” để lấy gia phả của gia đình.</p>') + '</section></div></div>';
-      $('#view').innerHTML = html; tsize = null; return;
-    }
-    state.troot = cur.id;
-    var sel = state.tsel ? personById(state.tsel) : null;
-    if (sel && (!rootDepth(sel).root || rootDepth(sel).root.id !== cur.id)) { sel = null; state.tsel = null; }
-    var lay = layoutTree(personById(cur.personId));
-    tsize = { w: lay.w, h: lay.h };
-
-    html += '<div class="tree-top">' + T.roots.map(function (r) {
-      return '<button class="fchip" data-act="tBranch" data-id="' + esc(r.id) + '" aria-pressed="' + (r.id === cur.id) + '">' + esc(r.name) + '</button>';
-    }).join('') + (canEdit() ? '<button class="fchip add" data-act="tAddRoot">＋ Thêm gốc</button>' : '') + '</div>';
-    html += '<div class="tree-desc"><span>' + esc(sel ? descOf(cur, genOf(sel)) : descOf(cur, cur.gen) + ' (người gốc)') + '</span>' + (canEdit() ? '<button class="linkbtn" data-act="tEditRoot">Sửa nhánh</button>' : '') + '</div>';
-
-    html += '<div class="tree-stage"><div class="tree-vp" id="tvp"><div class="tree-world" id="tworld" style="width:' + lay.w + 'px;height:' + lay.h + 'px">' +
-      '<svg width="' + lay.w + '" height="' + lay.h + '" aria-hidden="true">' + lay.lines.map(function (l) {
-        return '<line x1="' + l[0] + '" y1="' + l[1] + '" x2="' + l[2] + '" y2="' + l[3] + '"/>';
-      }).join('') + '</svg>' + lay.items.map(function (it) {
-        return '<div class="pf" style="left:' + it.x + 'px;top:' + it.y + 'px">' + it.rows.map(function (r) {
-          var p = r.p;
-          return '<div class="pr ' + p.sex + (it.rows.length === 1 ? ' solo' : '') + (p.dead ? ' dead' : '') + (sel && sel.id === p.id ? ' sel' : '') + '" data-pid="' + esc(p.id) + '" style="height:' + r.h + 'px">' +
-            '<b style="font-size:' + r.fs + 'px;line-height:' + r.lh + 'px">' + r.lines.map(esc).join('<br>') + '</b>' + (yearsOf(p) ? '<i>' + esc(yearsOf(p)) + '</i>' : '') + (p.dead ? '<span class="pl">' + ICON.lotus + '</span>' : '') + '</div>';
-        }).join('') + '</div>';
-      }).join('') + '</div></div>';
-    html += '<div class="tree-fabs"><button data-act="tZoomIn" aria-label="Phóng to">＋</button><button data-act="tZoomOut" aria-label="Thu nhỏ">−</button><button data-act="tFit" aria-label="Vừa khung">⤢</button></div></div>';
-    if (!sel) html += '<div class="tree-hint">Kéo để di chuyển · Chụm hai ngón để phóng to · Chạm vào một người</div>';
-    else {
-      var g = genOf(sel);
-      html += '<div class="tree-bar"><div class="tb-name">' + esc(sel.name) + (sel.dead ? '<span class="pl">' + ICON.lotus + '</span>' : '') + '</div>' +
-        '<div class="tb-sub">' + esc(personInfo(sel) || '—') + '</div>' +
-        '<div class="tb-sub">' + esc(g ? descOf(cur, g) : '') + '</div>' +
-        (canEdit() ? '<div class="tb-btns"><button data-act="tEdit">Sửa</button><button data-act="tDeath">Ngày mất</button>' +
-        '<button data-act="tSpouse"' + (sel.spouse ? ' disabled' : '') + '>＋ Vợ/chồng</button><button data-act="tChild">＋ Con</button></div>' : '') + '</div>';
-    }
-    html += '</div>';
-    $('#view').innerHTML = html;
-    if (tvFit) { fitTree(); tvFit = false; } else applyTv();
-    bindTree();
-  }
-
-  function applyTv() {
-    var w = $('#tworld'); if (!w) return;
-    w.style.transform = 'translate(' + tv.x + 'px,' + tv.y + 'px) scale(' + tv.k + ')';
-  }
-  function fitTree() {
-    var vp = $('#tvp'); if (!vp || !tsize) return;
-    var vw = vp.clientWidth, vh = vp.clientHeight;
-    var k = Math.max(0.2, Math.min(vw / tsize.w, vh / tsize.h, 1));
-    tv = { k: k, x: (vw - tsize.w * k) / 2, y: Math.max(0, (vh - tsize.h * k) / 2) };
-    applyTv();
-  }
-  function zoomAt(f, cx, cy) {
-    var k = Math.max(0.2, Math.min(3, tv.k * f)), r = k / tv.k;
-    tv.x = cx - (cx - tv.x) * r; tv.y = cy - (cy - tv.y) * r; tv.k = k; applyTv();
-  }
-  function zoomBy(f) { var vp = $('#tvp'); if (vp) zoomAt(f, vp.clientWidth / 2, vp.clientHeight / 2); }
-
-  function bindTree() {
-    var vp = $('#tvp'); if (!vp) return;
-    var ptrs = {}, drag = null, pinch = null;
-    var rel = function (e) { var r = vp.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
-    var ids = function () { return Object.keys(ptrs); };
-    var startPinch = function () {
-      var a = ptrs[ids()[0]], b = ptrs[ids()[1]];
-      var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, k: tv.k, wx: (mx - tv.x) / tv.k, wy: (my - tv.y) / tv.k };
-    };
-    vp.addEventListener('pointerdown', function (e) {
-      ptrs[e.pointerId] = rel(e);
-      try { vp.setPointerCapture(e.pointerId); } catch (x) {}
-      if (ids().length === 1) {
-        var c = e.target.closest ? e.target.closest('[data-pid]') : null;
-        drag = { sx: ptrs[e.pointerId].x, sy: ptrs[e.pointerId].y, ox: tv.x, oy: tv.y, moved: false, pid: c ? c.dataset.pid : null };
-      } else if (ids().length === 2) { drag = null; startPinch(); }
-    });
-    vp.addEventListener('pointermove', function (e) {
-      if (!ptrs[e.pointerId]) return;
-      ptrs[e.pointerId] = rel(e);
-      if (pinch && ids().length >= 2) {
-        var a = ptrs[ids()[0]], b = ptrs[ids()[1]];
-        var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-        var k = Math.max(0.2, Math.min(3, pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d));
-        tv.k = k; tv.x = mx - pinch.wx * k; tv.y = my - pinch.wy * k; applyTv();
-      } else if (drag) {
-        var p = ptrs[e.pointerId], dx = p.x - drag.sx, dy = p.y - drag.sy;
-        if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 8) drag.moved = true;
-        if (drag.moved) { tv.x = drag.ox + dx; tv.y = drag.oy + dy; applyTv(); }
-      }
-    });
-    var up = function (e) {
-      if (!ptrs[e.pointerId]) return;
-      var d = drag; delete ptrs[e.pointerId];
-      if (ids().length < 2) pinch = null;
-      if (ids().length === 1) { var q = ptrs[ids()[0]]; drag = { sx: q.x, sy: q.y, ox: tv.x, oy: tv.y, moved: true, pid: null }; }
-      else drag = null;
-      if (e.type === 'pointerup' && d && !d.moved && d.pid && ids().length === 0) { state.tsel = d.pid; renderTree(); }
-      else if (e.type === 'pointerup' && d && !d.moved && !d.pid && ids().length === 0 && state.tsel) { state.tsel = null; renderTree(); }
-    };
-    vp.addEventListener('pointerup', up);
-    vp.addEventListener('pointercancel', up);
-    vp.addEventListener('wheel', function (e) {
-      e.preventDefault();
-      var p = rel(e); zoomAt(Math.exp(-e.deltaY * 0.0015), p.x, p.y);
-    }, { passive: false });
-  }
-
-  /* --- form: nhánh / gốc --- */
-  function sexSeg(v) {
-    return '<div class="seg" role="group" aria-label="Giới tính"><label><input type="radio" name="sex" value="m"' + (v !== 'f' ? ' checked' : '') + '><span>Nam</span></label>' +
-      '<label><input type="radio" name="sex" value="f"' + (v === 'f' ? ' checked' : '') + '><span>Nữ</span></label></div>';
-  }
-  function openRootForm(id) {
-    if (viewOnly()) return;
-    var r = id ? rootById(id) : null; if (id && !r) return;
-    rctx = r ? r.id : null;
-    var v = r || { name: state.tree.roots.length ? 'Nhánh ' + (state.tree.roots.length + 1) : 'Nhánh nội', clan: '', branch: '', gen: 1 };
-    dlg.innerHTML = '<form class="form" id="rForm" novalidate autocomplete="off"><h2>' + (r ? 'Sửa nhánh' : 'Thêm gốc') + '</h2>' +
-      '<label>Tên nhánh<input type="text" name="rname" maxlength="30" placeholder="VD: Nhánh nội" value="' + esc(v.name) + '"></label>' +
-      '<div class="row2"><label>Họ / tộc<input type="text" name="clan" maxlength="30" placeholder="VD: Nguyễn" value="' + esc(v.clan) + '"></label>' +
-      '<label>Chi / phái<input type="text" name="branch" maxlength="30" placeholder="VD: đệ ngũ" value="' + esc(v.branch) + '"></label></div>' +
-      '<label>Người gốc ở đời thứ<input type="number" name="gen" inputmode="numeric" min="1" max="99" value="' + esc(v.gen) + '"></label>' +
-      '<p class="note" style="margin:0">Hiển thị dạng: “Nguyễn đệ ngũ · đời thứ 10”. Đời của con cháu tự tính theo người gốc.</p>' +
-      (r ? '' : '<div class="lbl">Người gốc</div><label>Họ tên<input type="text" name="pname" maxlength="60" placeholder="VD: Nguyễn Văn An"></label>' + sexSeg('m')) +
-      '<p class="err" id="formErr"></p><div class="actions">' + (r ? '<button type="button" class="btn danger" id="rDel">Xoá nhánh</button><span class="grow"></span>' : '') +
-      '<button type="button" class="btn" id="cancelBtn">Huỷ</button><button type="submit" class="btn primary">Lưu</button></div></form>';
-    if (!dlg.open) dlg.showModal();
-  }
-  function saveRoot() {
-    var f = $('#rForm').elements, err = $('#formErr');
-    var name = f.rname.value.trim(), gen = parseInt(f.gen.value, 10);
-    if (!name) { err.textContent = 'Hãy nhập tên nhánh.'; return; }
-    if (!(gen >= 1 && gen <= 99)) { err.textContent = 'Đời phải từ 1 đến 99.'; return; }
-    var vals = { name: name, clan: f.clan.value.trim(), branch: f.branch.value.trim(), gen: gen };
-    if (rctx) Object.assign(rootById(rctx), vals);
-    else {
-      var pn = f.pname.value.trim();
-      if (!pn) { err.textContent = 'Hãy nhập họ tên người gốc.'; return; }
-      var p = { id: uid(), name: pn, sex: f.sex.value === 'f' ? 'f' : 'm', note: '', bd: null, bm: null, by: null, dead: false, death: null, evId: null, spouse: null, isSpouse: false, parent: null };
-      var r = Object.assign({ id: uid(), personId: p.id }, vals);
-      state.tree.people.push(p); state.tree.roots.push(r);
-      state.troot = r.id; state.tsel = null; tvFit = true;
-    }
-    persistTree(); dlg.close(); toast('Đã lưu'); render();
-  }
-  function removePeople(idSet) {
-    var evs = [];
-    state.tree.people.forEach(function (p) { if (idSet[p.id] && p.evId && linkedEvent(p)) evs.push(p.evId); });
-    if (evs.length) {
-      if (confirm('Xoá luôn ' + evs.length + ' ngày giỗ tương ứng trong Sự kiện?\nBấm Huỷ để giữ lại các sự kiện.')) state.special = state.special.filter(function (s) { return evs.indexOf(s.id) < 0; });
-      else state.special.forEach(function (s) { if (evs.indexOf(s.id) >= 0) delete s.link; });
-      persistSpecial();
-    }
-    state.tree.people = state.tree.people.filter(function (p) { return !idSet[p.id]; });
-    if (idSet[state.tsel]) state.tsel = null;
-  }
-  function deleteRoot() {
-    var r = rootById(rctx); if (!r) return;
-    var ids = collect(r.personId, []);
-    if (!confirm('Xoá nhánh “' + r.name + '” và ' + ids.length + ' người trong nhánh này?')) return;
-    var set = {}; ids.forEach(function (i) { set[i] = 1; });
-    removePeople(set);
-    state.tree.roots = state.tree.roots.filter(function (x) { return x.id !== r.id; });
-    state.troot = state.tree.roots.length ? state.tree.roots[0].id : null; tvFit = true;
-    persistTree(); dlg.close(); toast('Đã xoá nhánh'); render();
-  }
-
-  /* --- form: người --- */
-  function openPersonForm(id, ctx) {
-    if (viewOnly()) return;
-    var p = id ? personById(id) : null; if (id && !p) return;
-    pctx = { id: id || null, kind: ctx && ctx.kind, of: ctx && ctx.of };
-    var base = p || { name: '', sex: 'm', note: '', bd: '', bm: '', by: '' };
-    if (!p && ctx && ctx.kind === 'spouse') { var o = personById(ctx.of); if (!o || o.spouse) return; base = Object.assign({}, base, { sex: o.sex === 'm' ? 'f' : 'm' }); }
-    if (!p && ctx && ctx.kind === 'child' && !personById(ctx.of)) return;
-    var title = p ? 'Sửa thông tin' : (ctx && ctx.kind === 'spouse' ? 'Thêm vợ/chồng' : 'Thêm con');
-    dlg.innerHTML = '<form class="form" id="pForm" novalidate autocomplete="off"><h2>' + title + '</h2>' +
-      '<label>Họ tên<input type="text" name="pname" maxlength="60" placeholder="VD: Nguyễn Văn Bình" value="' + esc(base.name) + '"></label>' + sexSeg(base.sex) +
-      '<label>Quan hệ / ghi chú<input type="text" name="note" maxlength="60" placeholder="VD: Ông nội, con trưởng…" value="' + esc(base.note || '') + '"></label>' +
-      '<div class="lbl">Ngày sinh (không bắt buộc)</div><div class="row3"><label>Ngày<input type="number" name="bd" inputmode="numeric" min="1" max="31" value="' + esc(base.bd || '') + '"></label>' +
-      '<label>Tháng<input type="number" name="bm" inputmode="numeric" min="1" max="12" value="' + esc(base.bm || '') + '"></label>' +
-      '<label>Năm<input type="number" name="by" inputmode="numeric" min="1000" max="2199" value="' + esc(base.by || '') + '"></label></div>' +
-      '<p class="err" id="formErr"></p>' +
-      '<button type="button" class="ghost" id="pDead">Người đã mất? Nhập ngày mất</button><div class="actions">' + (p ? '<button type="button" class="btn danger" id="pDel">Xoá</button><span class="grow"></span>' : '') +
-      '<button type="button" class="btn" id="cancelBtn">Huỷ</button><button type="submit" class="btn primary">Lưu</button></div></form>';
-    if (!dlg.open) dlg.showModal();
-  }
-  function savePerson() {
-    var goDeath = pDeadFlag; pDeadFlag = false;
-    var f = $('#pForm').elements, err = $('#formErr');
-    var num = function (n) { var x = parseInt(f[n].value, 10); return isNaN(x) ? null : x; };
-    var name = f.pname.value.trim(), bd = num('bd'), bm = num('bm'), by = num('by');
-    if (!name) { err.textContent = 'Hãy nhập họ tên.'; return; }
-    if ((bd && (bd < 1 || bd > 31)) || (bm && (bm < 1 || bm > 12))) { err.textContent = 'Ngày hoặc tháng sinh không hợp lệ.'; return; }
-    if (by != null && (by < 1000 || by > 2199)) { err.textContent = 'Năm sinh không hợp lệ.'; return; }
-    var vals = { name: name, sex: f.sex.value === 'f' ? 'f' : 'm', note: f.note.value.trim(), bd: bd, bm: bm, by: by };
-    var p;
-    if (pctx.id) {
-      p = personById(pctx.id); Object.assign(p, vals);
-      var ev = linkedEvent(p); if (ev) { ev.name = 'Giỗ ' + p.name; persistSpecial(); }
-    } else {
-      var of = personById(pctx.of);
-      p = Object.assign({ id: uid(), dead: false, death: null, evId: null, spouse: null, isSpouse: false, parent: null }, vals);
-      if (pctx.kind === 'spouse') { if (!of || of.spouse) return; p.isSpouse = true; p.spouse = of.id; of.spouse = p.id; }
-      else { if (!of) return; p.parent = headOf(of).id; }
-      state.tree.people.push(p); tvFit = true;
-    }
-    state.tsel = p.id;
-    persistTree(); dlg.close(); toast('Đã lưu'); render();
-    if (goDeath) openDeathForm(p.id);
-  }
-  function deletePerson() {
-    var p = personById(pctx.id); if (!p) return;
-    var ids, set = {};
-    if (p.isSpouse) ids = [p.id]; else ids = collect(p.id, []);
-    if (!confirm(ids.length > 1 ? 'Xoá “' + p.name + '” và ' + (ids.length - 1) + ' người liên quan (vợ/chồng, con cháu)?' : 'Xoá “' + p.name + '”?')) return;
-    ids.forEach(function (i) { set[i] = 1; });
-    if (p.isSpouse) { var h = personById(p.spouse); if (h) h.spouse = null; }
-    removePeople(set);
-    var r = state.tree.roots.filter(function (x) { return set[x.personId]; })[0];
-    if (r) { state.tree.roots = state.tree.roots.filter(function (x) { return x.id !== r.id; }); state.troot = state.tree.roots.length ? state.tree.roots[0].id : null; tvFit = true; }
-    persistTree(); dlg.close(); toast('Đã xoá'); render();
-  }
-
-  /* --- form: ngày giỗ / ngày mất --- */
-  function openDeathForm(id) {
-    if (viewOnly()) return;
-    var p = personById(id); if (!p) return;
-    dctx = p.id;
-    var dd = p.dead && p.death ? p.death : { cal: 'lunar', d: '', m: '', y: '', leap: false };
-    if (dd.cal === 'solar') { var dl0 = deathLunar(p); if (dl0) dd = { cal: 'lunar', d: dl0.d, m: dl0.m, y: dl0.y, leap: dl0.leap }; }
-    dlg.innerHTML = '<form class="form" id="dForm" novalidate autocomplete="off"><h2>Ngày mất · ' + esc(p.name) + '</h2>' +
-      '<p class="note" style="margin:0">Nhập ngày mất theo <b>âm lịch</b>. Ngày giỗ tự tính: luôn là ngày liền trước ngày mất.</p><input type="hidden" name="dcal" value="lunar">' +
-      '<div class="row3"><label>Ngày mất (âm)<input type="number" name="d" inputmode="numeric" min="1" max="31" value="' + esc(dd.d || '') + '"></label>' +
-      '<label>Tháng<input type="number" name="m" inputmode="numeric" min="1" max="12" value="' + esc(dd.m || '') + '"></label>' +
-      '<label>Năm mất (âm)<input type="number" name="y" inputmode="numeric" min="1000" max="2199" placeholder="VD: 2022" value="' + esc(dd.y || '') + '"></label></div>' +
-      '<label class="chk" id="dLeap"><input type="checkbox" name="leap"' + (dd.leap ? ' checked' : '') + '> Tháng nhuận</label>' +
-      '<p class="preview" id="dprev"></p>' +
-      '<label class="chk sw"><span>Thêm ngày giỗ vào Sự kiện (hằng năm)</span><input type="checkbox" name="ev"' + (linkedEvent(p) ? ' checked' : '') + '></label>' +
-      '<p class="note" style="margin:0">Tắt: chỉ hiện ngày này trong cây gia phả, không nhắc trong lịch.</p>' +
-      '<p class="err" id="formErr"></p><div class="actions">' + (p.dead ? '<button type="button" class="btn danger" id="dClear">Xoá ngày mất</button><span class="grow"></span>' : '') +
-      '<button type="button" class="btn" id="cancelBtn">Huỷ</button><button type="submit" class="btn primary">Lưu</button></div></form>';
-    syncDeath();
-    if (!dlg.open) dlg.showModal();
-  }
-  function readDeath() {
-    var f = $('#dForm').elements, num = function (n) { var x = parseInt(f[n].value, 10); return isNaN(x) ? null : x; };
-    return { cal: f.dcal.value, d: num('d'), m: num('m'), y: num('y'), leap: f.dcal.value === 'lunar' && f.leap.checked, ev: f.ev.checked };
-  }
-  function validDeath(v) {
-    if (!v.d || !v.m) return 'Hãy nhập ngày và tháng.';
-    if (v.m < 1 || v.m > 12 || v.d < 1) return 'Ngày hoặc tháng không hợp lệ.';
-    if (v.y != null && (v.y < 1000 || v.y > 2199)) return 'Năm mất không hợp lệ.';
-    if (v.cal === 'solar') { if (v.d > L.daysInMonth(v.m, v.y || 2024)) return 'Ngày dương lịch không hợp lệ.'; }
-    else {
-      if (v.d > 30) return 'Ngày âm lịch tối đa là 30.';
-      if (v.y != null && (v.y < 1900) ) return '';
-      if (v.y != null && !resolveLunar(v.d, v.m, v.y, v.leap)) return 'Ngày âm lịch này không tồn tại ở năm ' + v.y + '.';
-    }
-    return '';
-  }
-  function syncDeath() {
-    var form = $('#dForm'); if (!form) return;
-    var v = readDeath();
-    $('#dLeap').style.display = v.cal === 'lunar' ? '' : 'none';
-    var pv = $('#dprev');
-    if (!v.d || !v.m || validDeath(v)) { pv.textContent = 'Nhập ngày và tháng để xem ngày quy đổi.'; return; }
-    var Y = v.y || state.today.y;
-    if (v.cal === 'solar') {
-      var l = L.solarToLunar(v.d, v.m, Y);
-      pv.textContent = 'Ngày giỗ hằng năm: ' + l.d + '/' + l.m + (l.leap ? ' nhuận' : '') + ' âm lịch' + (v.y ? '' : ' (tính theo năm ' + Y + ')');
-    } else {
-      var r = resolveLunar(v.d, v.m, Y, v.leap);
-      if (!r) { pv.textContent = 'Không tìm được ngày tương ứng.'; return; }
-      var gr = L.addDays(r, -1), gl = L.solarToLunar(gr.d, gr.m, gr.y);
-      pv.textContent = 'Ngày mất tương đương ' + pad(r.d) + '/' + pad(r.m) + '/' + r.y + ' dương. Ngày giỗ: ' + gl.d + '/' + gl.m + (gl.leap ? ' nhuận' : '') + ' âm (' + pad(gr.d) + '/' + pad(gr.m) + '/' + gr.y + ' dương)' + (v.y ? '' : ' · tính theo năm ' + Y);
-    }
-  }
-  function saveDeath() {
-    var v = readDeath(), msg = validDeath(v), p = personById(dctx);
-    if (msg) { $('#formErr').textContent = msg; return; }
-    if (!p) return;
-    p.dead = true; p.death = { cal: v.cal, d: v.d, m: v.m, y: v.y, leap: v.leap };
-    if (v.ev) syncDeathEvent(p); else removeDeathEvent(p);
-    persistTree(); dlg.close(); toast(v.ev ? 'Đã lưu và thêm vào Sự kiện' : 'Đã lưu'); render();
-  }
-  function clearDeath() {
-    var p = personById(dctx); if (!p) return;
-    if (!confirm('Xoá ngày mất của “' + p.name + '”? Ngày giỗ trong Sự kiện (nếu có) cũng sẽ bị xoá.')) return;
-    p.dead = false; p.death = null; removeDeathEvent(p);
-    persistTree(); dlg.close(); toast('Đã xoá ngày mất'); render();
-  }
-
-  /* --- xoá toàn bộ --- */
-  function wipeTree() {
-    if (viewOnly()) return;
-    var n = state.tree.people.length;
-    if (!confirm('Xoá toàn bộ gia phả (' + n + ' người) khỏi máy này?\nNên xuất file sao lưu trước. Không hoàn tác được.')) return;
-    var linked = state.special.filter(function (s) { return s.link; });
-    if (linked.length && confirm('Xoá luôn ' + linked.length + ' ngày giỗ đã thêm từ Gia phả trong Sự kiện?')) {
-      state.special = state.special.filter(function (s) { return !s.link; });
-      persistSpecial();
-    } else linked.forEach(function (s) { delete s.link; });
-    if (linked.length) persistSpecial();
-    state.tree = { roots: [], people: [] }; state.troot = null; state.tsel = null; tvFit = true;
-    persistTree(); toast('Đã xoá gia phả'); render();
-  }
-
-  /* --- mã hoá file gia phả (PBKDF2 + AES-GCM) --- */
-  function b64(buf) { var a = new Uint8Array(buf), s = ''; for (var i = 0; i < a.length; i += 8192) s += String.fromCharCode.apply(null, a.subarray(i, i + 8192)); return btoa(s); }
-  function unb64(t) { var b = atob(t), a = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
-  function gpKey(pw, salt, iter) {
-    var enc = new TextEncoder();
-    return crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveKey']).then(function (k) {
-      return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: salt, iterations: iter, hash: 'SHA-256' }, k, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
-    });
-  }
-  function gpEncrypt(obj, pw) {
-    var salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
-    return gpKey(pw, salt, GP_ITER).then(function (key) {
-      return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, new TextEncoder().encode(JSON.stringify(obj)));
-    }).then(function (ct) { return { app: 'lich-viet-giapha', v: 1, iter: GP_ITER, salt: b64(salt), iv: b64(iv), data: b64(ct) }; });
-  }
-  function gpDecrypt(file, pw) {
-    if (!file || file.app !== 'lich-viet-giapha' || !file.salt || !file.iv || !file.data) return Promise.reject(new Error('format'));
-    var iter = Math.min(Math.max(parseInt(file.iter, 10) || GP_ITER, 100000), 2000000);
-    return gpKey(pw, unb64(file.salt), iter).then(function (key) {
-      return crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(file.iv) }, key, unb64(file.data));
-    }).then(function (buf) { return JSON.parse(new TextDecoder().decode(buf)); });
-  }
-  function gpApply(obj) {
-    var tr = sanitizeTree(obj && obj.tree);
-    if (!tr) throw new Error('format');
-    var evs = ((obj && obj.special) || []).map(sanitize).filter(function (x) { return x && x.link; });
-    state.special = state.special.filter(function (s) { return !s.link; }).concat(evs);
-    state.tree = tr; state.troot = tr.roots.length ? tr.roots[0].id : null; state.tsel = null; tvFit = true; state.edit = false;
-    persistTree(); persistSpecial();
-  }
-  function gpTurnOn() { state.set.tree = true; LS.set(KEY_SET, state.set); LS.set(KEY_GPOK, true); }
-  function gpEnableSelf() { gpTurnOn(); dlg.close(); toast('Đã bật Gia phả'); render(); }
-
-  var gpMode = null;
-  function openGpDialog(mode) {
-    gpMode = mode;
-    if (!(window.crypto && crypto.subtle)) { toast('Trình duyệt này không hỗ trợ mã hoá (cần HTTPS)'); return; }
-    if (mode === 'export' && viewOnly()) return;
-    var ex = mode === 'export', two = ex || mode === 'setlock';
-    var title = ex ? 'Xuất gia phả (có mật khẩu)' : ({ update: 'Cập nhật gia phả từ web', editpw: 'Bật chế độ sửa', setlock: 'Đặt mật khẩu sửa' }[mode] || 'Mở khoá Gia phả');
-    var text = mode === 'editpw' ? 'Nhập mật khẩu sửa gia phả.' : (mode === 'setlock' ? 'Mật khẩu này chỉ người được sửa gia phả biết (khác mật khẩu xem). Đặt xong, gia phả mặc định ở chế độ chỉ xem. Hãy xuất lại file để người nhà nhận được khoá này.' : ex ? 'Đặt mật khẩu để mã hoá. Người nhà cần đúng mật khẩu này để xem. Hãy dùng mật khẩu dài (ví dụ cụm 4–5 từ) và nhớ kỹ, quên là không lấy lại được file.'
-      : 'Nhập mật khẩu gia phả do người trong nhà cung cấp. App sẽ tải file gia phả mã hoá từ web và giải mã trên máy này.');
-    dlg.innerHTML = '<form class="form" id="gForm" novalidate autocomplete="off"><h2>' + title + '</h2><p class="note" style="margin:0">' + text + '</p>' +
-      '<label>Mật khẩu<input type="password" name="pw" autocomplete="off" autocapitalize="off"></label>' +
-      (two ? '<label>Nhập lại mật khẩu<input type="password" name="pw2" autocomplete="off" autocapitalize="off"></label>' : '') +
-      '<p class="err" id="formErr"></p><div class="actions"><button type="button" class="btn" id="cancelBtn">Huỷ</button><button type="submit" class="btn primary">' + (ex ? 'Xuất file' : (mode === 'setlock' ? 'Đặt mật khẩu' : 'Mở')) + '</button></div>' +
-      (mode === 'unlock' ? '<button type="button" class="ghost" id="gSelf">Chưa có file gia phả? Bật để tự tạo</button>' : '') + '</form>';
-    if (!dlg.open) dlg.showModal();
-  }
-  function saveGp() {
-    var f = $('#gForm').elements, err = $('#formErr'), pw = f.pw.value, btn = $('#gForm button[type=submit]');
-    if (gpMode === 'editpw' || gpMode === 'setlock') {
-      var lk = state.tree.lock;
-      if (gpMode === 'setlock') {
-        if (pw.length < 6) { err.textContent = 'Mật khẩu sửa cần ít nhất 6 ký tự.'; return; }
-        if (pw !== f.pw2.value) { err.textContent = 'Hai lần nhập chưa giống nhau.'; return; }
-        var salt = crypto.getRandomValues(new Uint8Array(16));
-        btn.disabled = true;
-        lockHash(pw, salt, 150000).then(function (h) {
-          state.tree.lock = { salt: b64(salt), iter: 150000, hash: h }; state.edit = true; persistTree();
-          dlg.close(); toast('Đã đặt mật khẩu sửa'); render();
-        });
-        return;
-      }
-      if (!lk) { state.edit = true; dlg.close(); render(); return; }
-      btn.disabled = true;
-      lockHash(pw, unb64(lk.salt), lk.iter).then(function (h) {
-        if (h !== lk.hash) { btn.disabled = false; err.textContent = 'Sai mật khẩu sửa.'; return; }
-        state.edit = true; dlg.close(); toast('Đã bật chế độ sửa'); render();
-      });
-      return;
-    }
-    if (gpMode === 'export') {
-      if (pw.length < 8) { err.textContent = 'Mật khẩu cần ít nhất 8 ký tự.'; return; }
-      if (pw !== f.pw2.value) { err.textContent = 'Hai lần nhập mật khẩu chưa giống nhau.'; return; }
-      btn.disabled = true; err.textContent = 'Đang mã hoá…';
-      gpEncrypt({ tree: state.tree, special: state.special.filter(function (s) { return s.link; }) }, pw).then(function (file) {
-        var blob = new Blob([JSON.stringify(file)], { type: 'application/json' });
-        var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = GP_FILE;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(function () { URL.revokeObjectURL(a.href); }, 3000);
-        dlg.close(); toast('Đã xuất ' + GP_FILE + '. Đưa file vào thư mục app trên GitHub.');
-      }).catch(function () { btn.disabled = false; err.textContent = 'Không mã hoá được.'; });
-      return;
-    }
-    if (!pw) { err.textContent = 'Hãy nhập mật khẩu.'; return; }
-    btn.disabled = true; err.textContent = 'Đang tải và giải mã…';
-    fetch(GP_FILE, { cache: 'no-store' }).then(function (r) {
-      if (!r.ok) throw new Error(r.status === 404 ? 'nofile' : 'net');
-      return r.json();
-    }).then(function (file) {
-      return gpDecrypt(file, pw).then(function (obj) { return obj; }, function () { throw new Error('badpw'); });
-    }).then(function (obj) {
-      if (state.tree.people.length && gpMode === 'update' && !confirm('Thay gia phả trên máy này bằng bản từ web? Phần sửa chỉ có trên máy này sẽ mất.')) { btn.disabled = false; err.textContent = ''; return; }
-      gpApply(obj); gpTurnOn(); dlg.close(); toast('Đã mở Gia phả'); render();
-    }).catch(function (e) {
-      btn.disabled = false;
-      err.textContent = e.message === 'badpw' ? 'Sai mật khẩu, hoặc file gia phả bị hỏng.' : (e.message === 'nofile' ? 'Trên web chưa có file ' + GP_FILE + '.' : (e.message === 'net' ? 'Không tải được file gia phả.' : 'Không đọc được file gia phả.'));
-    });
   }
 
   /* ---------- Điều khiển chung ---------- */
@@ -1284,23 +669,19 @@
   }
 
   function render() {
-    var titles = { today: 'Hôm nay', cal: 'Lịch', special: 'Sự kiện', settings: 'Cài đặt', tree: 'Gia phả' };
-    if (state.tab === 'tree' && !state.set.tree) state.tab = 'settings';
-    $('#treeBtn').hidden = !state.set.tree;
-    $('#treeBtn').setAttribute('aria-current', state.tab === 'tree' ? 'page' : 'false');
-    document.body.classList.toggle('on-tree', state.tab === 'tree');
+    var titles = { today: 'Hôm nay', cal: 'Lịch', special: 'Sự kiện', settings: 'Cài đặt' };
+    if (!titles[state.tab]) state.tab = 'today';
     $('#title').textContent = titles[state.tab];
     document.querySelectorAll('#tabs button').forEach(function (b) { b.setAttribute('aria-current', b.dataset.tab === state.tab ? 'page' : 'false'); });
     $('#settingsBtn').setAttribute('aria-current', state.tab === 'settings' ? 'page' : 'false');
-    ({ today: renderToday, cal: renderCal, special: renderSpecial, settings: renderSettings, tree: renderTree })[state.tab]();
+    ({ today: renderToday, cal: renderCal, special: renderSpecial, settings: renderSettings })[state.tab]();
   }
-  function goTab(tab) { state.tab = tab; if (tab === 'tree') tvFit = true; render(); window.scrollTo(0, 0); }
+  function goTab(tab) { state.tab = tab; render(); window.scrollTo(0, 0); }
 
   $('#tabs').addEventListener('click', function (e) {
     var b = e.target.closest('button[data-tab]'); if (b) goTab(b.dataset.tab);
   });
   $('#settingsBtn').addEventListener('click', function () { goTab('settings'); });
-  $('#treeBtn').addEventListener('click', function () { goTab('tree'); });
 
   var main = $('#view');
   main.addEventListener('click', function (e) {
@@ -1318,22 +699,6 @@
       case 'checkApp': checkAppUpdate(true); break;
       case 'export': exportData(); break;
       case 'import': $('#importFile').click(); break;
-      case 'tBranch': state.troot = el.dataset.id; state.tsel = null; tvFit = true; renderTree(); break;
-      case 'tAddRoot': openRootForm(null); break;
-      case 'tEditRoot': openRootForm(state.troot); break;
-      case 'tZoomIn': zoomBy(1.25); break;
-      case 'tZoomOut': zoomBy(0.8); break;
-      case 'tFit': fitTree(); break;
-      case 'tEdit': openPersonForm(state.tsel); break;
-      case 'tDeath': openDeathForm(state.tsel); break;
-      case 'tSpouse': openPersonForm(null, { kind: 'spouse', of: state.tsel }); break;
-      case 'tChild': openPersonForm(null, { kind: 'child', of: state.tsel }); break;
-      case 'gpExport': openGpDialog('export'); break;
-      case 'gpUpdate': openGpDialog('update'); break;
-      case 'gpWipe': wipeTree(); break;
-      case 'gpEditOn': openGpDialog('editpw'); break;
-      case 'gpEditOff': state.edit = false; render(); toast('Đã tắt chế độ sửa'); break;
-      case 'gpSetLock': openGpDialog('setlock'); break;
       case 'install':
         if (state.installEvt) { state.installEvt.prompt(); state.installEvt = null; }
         break;
@@ -1345,7 +710,6 @@
   main.addEventListener('change', function (e) {
     if (e.target.id === 'jump' && e.target.value) setSel(parseKey(e.target.value));
     var k = e.target.dataset && e.target.dataset.set;
-    if (k === 'tree' && e.target.checked && !LS.get(KEY_GPOK, false)) { e.target.checked = false; openGpDialog('unlock'); return; }
     if (k) { state.set[k] = e.target.checked; LS.set(KEY_SET, state.set); yearCache = {}; render(); }
   });
   $('#importFile').addEventListener('change', function (e) {

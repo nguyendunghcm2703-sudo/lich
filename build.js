@@ -132,7 +132,7 @@ function minCss(s) {
   for (const f of fs.readdirSync(DIST).filter((n) => n.endsWith('.css'))) write(f, minCss(read(f)));
 
   // Service worker: điền phiên bản và danh sách file, chỉ nén nhẹ
-  const assets = ['./'].concat(listFiles(DIST).filter((f) => f !== 'sw.js' && f !== '_headers' && f !== 'giapha.enc.json'));
+  const assets = ['./'].concat(listFiles(DIST).filter((f) => f !== 'sw.js' && f !== '_headers'));
   let sw = read('sw.js').split('__BUILD__').join(BUILD_ID);
   const re = /\/\*__ASSETS__\*\/\s*\[[\s\S]*?\]/;
   if (!re.test(sw)) throw new Error('Không tìm thấy mốc ASSETS trong sw.js');
